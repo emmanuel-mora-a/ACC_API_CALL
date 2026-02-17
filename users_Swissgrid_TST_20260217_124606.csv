@@ -1,0 +1,11 @@
+first_name,last_name,email,project_name,roles,company,products,access_level
+Martin,Henz,martin.henz@infragon.ch,mockup_Vorlage_Swissgrid,BIM Manager (Removed),Swissgrid TST,Project Administration;Docs;Build;Insight,N/A
+Christoph,Gutmann,christoph.gutmann@swissgrid.ch,SAAA-ProvisionerAAA,Fachplaner,Swissgrid TST,Insight;Build;Docs;Model Coordination,N/A
+Emmanuel,Mora,emmanuel.mora@swissgrid.ch,SAAA-ProvisionerAAA,Lieferant_Gebäudetechnik,Swissgrid TST,Insight;Build;Model Coordination;Docs,N/A
+sahin,oyman,sahin.oyman@gmail.com,SAAA-ProvisionerAAA,Swissgrid_intern,,Docs;Model Coordination;Build;Insight,N/A
+Emmanuel,Mora,emmanuel.mora@swissgrid.ch,SCCC-ProvisionerCCC,Swissgrid_intern,Swissgrid TST,Project Administration;Docs;Model Coordination;Build;Insight,N/A
+Martin,Henz,martin.henz@infragon.ch,Component Library Project 8bd82268-1e73-41d1-9d23-cb3ca9684488,N/A,Swissgrid TST,Project Administration;Docs;Design Collaboration;Model Coordination;Build;Cost;Takeoff;Insight;capitalPlanning;forma,N/A
+Mate,Petrich,mate.petrich@swissgrid.ch,Component Library Project 8bd82268-1e73-41d1-9d23-cb3ca9684488,N/A,Swissgrid TST,Project Administration;Docs;Design Collaboration;Model Coordination;Takeoff;Build;Cost;Insight;capitalPlanning;forma,N/A
+Emmanuel,Mora,emmanuel.mora@swissgrid.ch,IN_ACC_but_Not_In_SF,Swissgrid_intern,Swissgrid TST,Project Administration;Docs;Insight;Model Coordination;Build,N/A
+Martin,Henz,martin.henz@infragon.ch,IN_ACC_but_Not_In_SF,Swissgrid_intern,Swissgrid TST,Model Coordination;Build;Insight;Docs,N/A
+Mate,Petrich,mate.petrich@swissgrid.ch,IN_ACC_but_Not_In_SF,Swissgrid_intern,Swissgrid TST,Docs;Model Coordination;Build;Insight,N/A

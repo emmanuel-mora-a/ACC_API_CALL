@@ -175,7 +175,22 @@ def extract_user_row(user, project_name):
     product_names = _deduplicated(product_names)
     products_str = ";".join(product_names) if product_names else "N/A"
 
-    return [first_name, last_name, email, project_name, roles_str, company, products_str]
+    # Access level: derived from the accessLevels object (boolean flags)
+    access_levels_obj = user.get("accessLevels", {})
+    access_parts = []
+    if access_levels_obj.get("accountAdmin"):
+        access_parts.append("Account Administrator")
+    if access_levels_obj.get("projectAdmin"):
+        access_parts.append("Project Administrator")
+    if access_levels_obj.get("executive"):
+        access_parts.append("Executive")
+    if access_levels_obj.get("accountStandardsAdministrator"):
+        access_parts.append("Account Standards Administrator")
+    if not access_parts:
+        access_parts.append("Project Member")
+    access_level = ";".join(access_parts)
+
+    return [first_name, last_name, email, project_name, roles_str, company, products_str, access_level]
 
 
 def fetch_all_users_for_hub(hub_id, hubs):
@@ -236,6 +251,7 @@ def export_users_to_csv(rows, hub_name="unknown"):
         "roles",
         "company",
         "products",
+        "access_level",
     ]
 
     with open(filename, "w", newline="", encoding="utf-8") as f:
