@@ -155,7 +155,7 @@ if __name__ == "__main__":
     
     if hubs:
         # Step 2: Prompt user to select a Hub ID for project listing
-        default_hub = os.getenv("Swissgrid_AG", "")
+        default_hub = os.getenv("Swissgrid_TST", "")
         hub_id_input = input(f"Enter a Hub ID from above to list its projects [{default_hub}]: ").strip() or default_hub
 
         if hub_id_input:
