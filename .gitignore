@@ -6,6 +6,11 @@ __pycache__/
 *.py[cod]
 *.pyo
 
+# Generated reports and exported data
+provisioner_*.csv
+projects_*.csv
+users_*.csv
+
 # IDE
 .vscode/
 .idea/

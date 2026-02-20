@@ -10,8 +10,8 @@ import time
 from datetime import datetime
 
 import requests
-from auth import get_auth_headers, BASE_URL
-from acc_api import get_hubs, get_projects
+from auth import get_auth_headers, BASE_URL, HUB_KEY, HUB_ID, ACC_ENV
+from acc_hub_projects import get_hubs, get_projects
 
 
 # Max retries for 429 rate-limited requests
@@ -273,9 +273,9 @@ if __name__ == "__main__":
 
     if hubs:
         # Step 2: Select hub (default from .env)
-        default_hub = os.getenv("Swissgrid_TST", "")
+        default_hub = HUB_ID
         hub_id_input = input(
-            f"Enter a Hub ID to fetch project users [{default_hub}]: "
+            f"Enter a Hub ID to fetch project users [{HUB_KEY}={default_hub}]: "
         ).strip() or default_hub
 
         if hub_id_input:
