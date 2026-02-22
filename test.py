@@ -157,6 +157,5 @@ if __name__ == "__main__":
 
     print(f"\nTesting fetch_project_users on: {target['name']} ({target['id']})\n")
 
-    member_set, company_map = fetch_project_users(target["id"])
-    print("Members:", member_set)
-    print("Companies:", company_map)
+    acc_member_set = fetch_project_users(target["id"])
+    print("Members:", acc_member_set)

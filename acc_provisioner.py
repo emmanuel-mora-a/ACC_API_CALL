@@ -148,29 +148,67 @@ def load_role_map_from_json(path=ROLE_JSON_PATH):
 def build_project_map(hub_id):
     """Fetch all projects and return a dict of lowercase_name -> {id, name}."""
     projects = get_projects(hub_id)
-    project_map = {}
+    acc_project_map = {}
     for p in projects:
         name = p.get("attributes", {}).get("name", "")
         pid = p.get("id", "")
-        project_map[name.strip().lower()] = {"id": pid, "name": name}
-    return project_map
+        acc_project_map[name.strip().lower()] = {"id": pid, "name": name}
+    return acc_project_map
 
 
 # ---------------------------------------------------------------------------
-# Project users fetch (membership + company mapping)
+# Account-level company fetch
+# ---------------------------------------------------------------------------
+
+def fetch_account_companies(hub_id):
+    """Fetch all companies at the account/hub level.
+    Returns acc_company_map: dict of lowercase_company_name -> companyId.
+    """
+    account_id = _strip_id(hub_id)
+    url = f"{BASE_URL}/construction/admin/v1/accounts/{account_id}/companies"
+
+    acc_company_map = {}
+    offset = 0
+    limit = 100
+
+    while True:
+        resp, err = _api_get(url, params={"offset": offset, "limit": limit})
+        if err or resp.status_code != 200:
+            break
+
+        data = resp.json()
+        companies = data if isinstance(data, list) else data.get("results", [])
+
+        for c in companies:
+            name = c.get("name", "").strip().lower()
+            cid = c.get("id", "")
+            if name and cid:
+                acc_company_map[name] = cid
+
+        if isinstance(data, dict):
+            total = data.get("pagination", {}).get("totalResults", 0)
+            if offset + limit >= total:
+                break
+        else:
+            break
+
+        offset += limit
+
+    return acc_company_map
+
+
+# ---------------------------------------------------------------------------
+# Project users fetch (membership check)
 # ---------------------------------------------------------------------------
 
 def fetch_project_users(project_id):
-    """
-    Fetch all users for a project. Returns:
-      - member_set:   set of lowercase emails already in the project
-      - company_map:  dict of lowercase_company_name -> companyId
+    """Fetch all users for a project.
+    Returns acc_member_set: set of lowercase emails already in the project.
     """
     clean_id = _strip_id(project_id)
     url = f"{BASE_URL}/construction/admin/v1/projects/{clean_id}/users"
 
-    member_set = set()
-    company_map = {}
+    acc_member_set = set()
     offset = 0
     limit = 100
 
@@ -185,12 +223,7 @@ def fetch_project_users(project_id):
         for u in users:
             email = u.get("email", "").strip().lower()
             if email:
-                member_set.add(email)
-
-            comp_name = u.get("companyName", "")
-            comp_id = u.get("companyId", "")
-            if comp_name and comp_id:
-                company_map[comp_name.strip().lower()] = comp_id
+                acc_member_set.add(email)
 
         if isinstance(data, dict):
             total = data.get("pagination", {}).get("totalResults", 0)
@@ -201,7 +234,7 @@ def fetch_project_users(project_id):
 
         offset += limit
 
-    return member_set, company_map
+    return acc_member_set
 
 
 # ---------------------------------------------------------------------------
@@ -236,7 +269,7 @@ def import_user_to_project(project_id, email, role_ids, access_level, company_id
 
     body = {"users": [user_payload]}
 
-    extra = {"x-user-id": USER_ID} if USER_ID else None
+    extra = {"x-user-id": USER_ID} if USER_ID else None #: The users:import endpoint doesn't accept a plain 2-legged token. The x-user-id header tells the API "act on behalf of this admin user." Without it, the API returns 401 Unauthorized — which is exactly what happened before we added it.
     resp, err = _api_post(url, body, extra_headers=extra)
     if err:
         return False, err
@@ -246,7 +279,7 @@ def import_user_to_project(project_id, email, role_ids, access_level, company_id
 
     result = resp.json()
     if isinstance(result, dict):
-        failures = result.get("failure", [])
+        failures = result.get("failure", []) #if it is a failure, it will be in the failure array
         if failures:
             reason = failures[0].get("errors", [{}])[0].get("title", "unknown error")
             return False, reason
@@ -307,8 +340,18 @@ def main():
     parser = argparse.ArgumentParser( description="Provision ACC users from a CSV file.")
     parser.add_argument("csv_file", help="Path to the input CSV file")
     parser.add_argument("hub_env_key", nargs="?", default=HUB_KEY, help=f"Hub key from .env (default: {HUB_KEY})",)
-    parser.add_argument("--dry-run", action="store_true",help="Validate everything but skip the actual user import API call",)
+    #action="store_true" -- if the user includes --dry-run, set it to True. If they don't, it defaults to False
+    #python acc_provisioner.py data.csv --dry-run    # dry_run = True  → only simulates, no API calls
+    parser.add_argument("--dry-run", action="store_true",help="Validate everything but skip the actual user import API call",) 
     args = parser.parse_args()
+
+    # Usage examples:
+    #   python acc_provisioner.py data_user_import\one_user.csv                           → production run
+    #   python acc_provisioner.py data_user_import\one_user.csv --dry-run                 → simulate only
+    #   python acc_provisioner.py data_user_import\one_user.csv Swissgrid_AG              → different hub
+    #   python acc_provisioner.py data_user_import\one_user.csv Swissgrid_AG --dry-run    → different hub + dry-run
+    #   python acc_provisioner.py --help                                                  → show all options
+
 
     csv_path = args.csv_file
     hub_key = args.hub_env_key
@@ -336,27 +379,32 @@ def main():
 
     # --- Fetch projects and build name -> ID map ---
     print(f"\nFetching projects for hub: {hub_key} ({hub_id})...")
-    project_map = build_project_map(hub_id)
-    print(f"  {len(project_map)} projects found")
+    acc_project_map = build_project_map(hub_id)
+    print(f"  {len(acc_project_map)} projects found")
 
-    # --- Pre-fetch project users (members + companies) per project ---
-    project_data_cache = {}  # project_id -> (member_set, company_map)
+    # --- Fetch companies at account/hub level ---
+    print(f"\nFetching companies for account...")
+    acc_company_map = fetch_account_companies(hub_id)
+    print(f"  {len(acc_company_map)} companies found")
+
+    # --- Pre-fetch project members per project ---
+    acc_member_cache = {}  # project_id -> acc_member_set
 
     unique_projects = set()
     for row in rows:
         unique_projects.add(row["project_name"].strip().lower())
 
-    print(f"\nPre-fetching users for {len(unique_projects)} unique projects...")
+    print(f"\nPre-fetching members for {len(unique_projects)} unique projects...")
     for proj_name in unique_projects:
-        proj = project_map.get(proj_name)
+        proj = acc_project_map.get(proj_name)
         if not proj:
             continue
         pid = proj["id"]
-        if pid not in project_data_cache:
-            print(f"  Fetching users for: {proj['name']}...")
-            member_set, company_map = fetch_project_users(pid)
-            project_data_cache[pid] = (member_set, company_map)
-            print(f"    {len(member_set)} members, {len(company_map)} companies")
+        if pid not in acc_member_cache:
+            print(f"  Fetching members for: {proj['name']}...")
+            acc_member_set = fetch_project_users(pid)
+            acc_member_cache[pid] = acc_member_set
+            print(f"    {len(acc_member_set)} members")
 
     # --- Process rows ---
     added = []
@@ -380,14 +428,14 @@ def main():
         seen.add(dedup_key)
 
         # 1. Resolve project
-        proj = project_map.get(project_name.strip().lower())
+        proj = acc_project_map.get(project_name.strip().lower())
         if not proj:
             print(f"  {label} ... FAILED (project not found)")
             failed.append({"email": email, "project_name": project_name, "reason": "project not found"})
             continue
 
         project_id = proj["id"]
-        member_set, company_map = project_data_cache.get(project_id, (set(), {}))
+        acc_member_set = acc_member_cache.get(project_id, set())
 
         # 2. Resolve roles from JSON (CSV has name, JSON maps name -> id)
         role_ids = []
@@ -405,12 +453,12 @@ def main():
 
         # 3. Resolve companyId
         company = row["company"]
-        company_id = company_map.get(company.strip().lower()) if company else None
+        company_id = acc_company_map.get(company.strip().lower()) if company else None
         if company and not company_id:
             print(f"    (!) Company not found: {company}")
 
         # 4. Check membership
-        if email in member_set:
+        if email in acc_member_set:
             print(f"  {label} ... SKIPPED (already member)")
             skipped.append({"email": email, "project_name": project_name, "reason": "already member"})
             continue
@@ -428,7 +476,7 @@ def main():
             if success:
                 print(f"  {label} ... ADDED")
                 added.append({"email": email, "project_name": project_name})
-                member_set.add(email)
+                acc_member_set.add(email)
             else:
                 print(f"  {label} ... FAILED ({err_msg})")
                 failed.append({"email": email, "project_name": project_name, "reason": err_msg})
@@ -442,8 +490,10 @@ def main():
 
     # --- Write report CSV ---
     mode_label = "dryrun" if dry_run else "report"
+    report_dir = os.path.join(os.path.dirname(__file__), "report")
+    os.makedirs(report_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    report_path = f"provisioner_{mode_label}_{timestamp}.csv"
+    report_path = os.path.join(report_dir, f"provisioner_{mode_label}_{timestamp}.csv")
     with open(report_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["email", "project_name", "status", "reason"])

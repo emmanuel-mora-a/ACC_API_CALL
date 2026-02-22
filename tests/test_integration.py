@@ -27,11 +27,12 @@ from acc_provisioner import (
     parse_csv,
     build_project_map,
     fetch_project_users,
+    fetch_account_companies,
     load_role_map_from_json,
     _strip_id,
 )
 
-FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
+FIXTURES = os.path.join(os.path.dirname(__file__), "..", "data_user_import")
 SKIP_LIVE = not HUB_ID
 SKIP_REASON = "No HUB_ID configured — set .env with valid TST credentials"
 
@@ -66,7 +67,7 @@ class TestProjectResolution:
 
 @pytest.mark.skipif(SKIP_LIVE, reason=SKIP_REASON)
 class TestProjectUsersFetch:
-    """Verify combined user fetch (membership + company) works for a real project."""
+    """Verify project member fetch works for a real project."""
 
     def _get_first_project_id(self):
         project_map = build_project_map(HUB_ID)
@@ -74,28 +75,39 @@ class TestProjectUsersFetch:
             pytest.skip("No projects available")
         return list(project_map.values())[0]["id"]
 
-    def test_returns_member_set_and_company_map(self):
+    def test_returns_member_set(self):
         pid = self._get_first_project_id()
-        member_set, company_map = fetch_project_users(pid)
-        assert isinstance(member_set, set)
-        assert isinstance(company_map, dict)
+        acc_member_set = fetch_project_users(pid)
+        assert isinstance(acc_member_set, set)
 
     def test_member_emails_are_lowercase(self):
         pid = self._get_first_project_id()
-        member_set, _ = fetch_project_users(pid)
-        for email in member_set:
+        acc_member_set = fetch_project_users(pid)
+        for email in acc_member_set:
             assert email == email.lower(), f"Email '{email}' is not lowercase"
-
-    def test_company_keys_are_lowercase(self):
-        pid = self._get_first_project_id()
-        _, company_map = fetch_project_users(pid)
-        for key in company_map:
-            assert key == key.lower(), f"Company key '{key}' is not lowercase"
 
     def test_nonexistent_user_not_in_members(self):
         pid = self._get_first_project_id()
-        member_set, _ = fetch_project_users(pid)
-        assert "definitely.not.a.real.user.xyz@example.com" not in member_set
+        acc_member_set = fetch_project_users(pid)
+        assert "definitely.not.a.real.user.xyz@example.com" not in acc_member_set
+
+
+@pytest.mark.skipif(SKIP_LIVE, reason=SKIP_REASON)
+class TestAccountCompanies:
+    """Verify account-level company fetch works."""
+
+    def test_company_map_not_empty(self):
+        acc_company_map = fetch_account_companies(HUB_ID)
+        assert len(acc_company_map) > 0, "Expected at least one company"
+
+    def test_company_keys_are_lowercase(self):
+        acc_company_map = fetch_account_companies(HUB_ID)
+        for key in acc_company_map:
+            assert key == key.lower(), f"Company key '{key}' is not lowercase"
+
+    def test_known_company_resolves(self):
+        acc_company_map = fetch_account_companies(HUB_ID)
+        assert "swissgrid tst" in acc_company_map
 
 
 @pytest.mark.skipif(SKIP_LIVE, reason=SKIP_REASON)
