@@ -1,0 +1,5 @@
+first_name,last_name,email,project_name,roles,company,access_level
+Test,User1,test.user1@example.com,SAAA-ProvisionerAAA,Swissgrid_intern,Swissgrid TST,Member
+Test,User2,test.user2@example.com,SAAA-ProvisionerAAA,Swissgrid_intern,Swissgrid TST,Member
+Test,NoRole,test.norole@example.com,SAAA-ProvisionerAAA,,Swissgrid TST,Administrator
+Test,Admin1,test.admin1@example.com,SAAA-ProvisionerAAA,Lieferant_Gebäudetechnik,Swissgrid TST,Administrator

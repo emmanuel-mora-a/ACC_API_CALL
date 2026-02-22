@@ -10,7 +10,8 @@ import time
 import requests
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+_PROJECT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+load_dotenv(os.path.join(_PROJECT_ROOT, ".env"), override=True)
 
 # --- Environment selection (change this one value to switch) ---
 ACC_ENV = "TST"

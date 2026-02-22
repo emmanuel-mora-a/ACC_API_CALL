@@ -6,6 +6,7 @@ Exports project data to CSV.
 
 import csv
 import os
+import sys
 from datetime import datetime
 
 import requests
@@ -92,9 +93,13 @@ def export_projects_to_csv(projects, hub_name="unknown"):
         print("No projects to export.")
         return
 
+    _project_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    output_dir = os.path.join(_project_root, "ACC_Projects")
+    os.makedirs(output_dir, exist_ok=True)
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_hub_name = hub_name.replace(" ", "_").replace("/", "-")
-    filename = f"projects_{safe_hub_name}_{timestamp}.csv"
+    filename = os.path.join(output_dir, f"projects_{safe_hub_name}_{timestamp}.csv")
 
     csv_headers = [
         "Project Name",
@@ -148,29 +153,34 @@ def export_projects_to_csv(projects, hub_name="unknown"):
 
 
 if __name__ == "__main__":
-    # Step 1: Get all Hubs
+    import argparse
+
+    parser = argparse.ArgumentParser(description="List ACC hubs and projects, export to CSV.")
+    parser.add_argument("hub_env_key", nargs="?", default=HUB_KEY, help=f"Hub key from .env (default: {HUB_KEY})")
+    args = parser.parse_args()
+
+    hub_id = os.getenv(args.hub_env_key, "")
+    if not hub_id:
+        print(f"Error: Hub key '{args.hub_env_key}' not found in .env")
+        sys.exit(1)
+
+    # Usage:
+    #   python src\acc_hub_projects.py                  → uses default hub (Swissgrid_TST)
+    #   python src\acc_hub_projects.py Swissgrid_AG     → uses AG hub
+
     print("\nFetching Hubs...")
     hubs = get_hubs()
 
-    
     if hubs:
-        # Step 2: Prompt user to select a Hub ID for project listing
-        default_hub = HUB_ID
-        hub_id_input = input(f"Enter a Hub ID from above to list its projects [{HUB_KEY}={default_hub}]: ").strip() or default_hub
+        hub_name = "unknown"
+        for hub in hubs:
+            if hub.get("id") == hub_id:
+                hub_name = hub.get("attributes", {}).get("name", "unknown")
+                break
 
-        if hub_id_input:
-            # Find the hub name for the CSV filename
-            hub_name = "unknown"
-            for hub in hubs:
-                if hub.get("id") == hub_id_input:
-                    hub_name = hub.get("attributes", {}).get("name", "unknown")
-                    break
+        print(f"\nFetching Projects for Hub: {hub_name} ({hub_id})...")
+        projects = get_projects(hub_id)
 
-            print(f"\nFetching Projects for Hub: {hub_name} ({hub_id_input})...")
-            projects = get_projects(hub_id_input)
-
-            if projects:
-                print("\nExporting projects to CSV...")
-                export_projects_to_csv(projects, hub_name)
-        else:
-            print("No Hub ID entered. Exiting.")
+        if projects:
+            print("\nExporting projects to CSV...")
+            export_projects_to_csv(projects, hub_name)

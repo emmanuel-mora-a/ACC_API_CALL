@@ -2,7 +2,7 @@
 Integration tests — these hit the LIVE ACC API (Swissgrid TST).
 They only perform read operations (dry-run) so nothing is modified.
 
-Run:  python -m pytest tests/test_integration.py -v -s
+Run:  python -m pytest _Tests/test_integration.py -v -s
       (use -s to see the print output from the provisioner)
 
 Prerequisites:
@@ -15,12 +15,13 @@ import sys
 import csv
 import tempfile
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import pytest
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+_PROJECT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+load_dotenv(os.path.join(_PROJECT_ROOT, ".env"), override=True)
 
 from auth import ACC_ENV, HUB_ID
 from acc_provisioner import (
@@ -29,10 +30,12 @@ from acc_provisioner import (
     fetch_project_users,
     fetch_account_companies,
     load_role_map_from_json,
+    update_user_in_project,
+    _detect_changes,
     _strip_id,
 )
 
-FIXTURES = os.path.join(os.path.dirname(__file__), "..", "data_user_import")
+FIXTURES = os.path.join(_PROJECT_ROOT, "DATA_user_import")
 SKIP_LIVE = not HUB_ID
 SKIP_REASON = "No HUB_ID configured — set .env with valid TST credentials"
 
@@ -48,7 +51,7 @@ class TestProjectResolution:
     def test_known_project_resolves(self):
         """At least one project from happy_path.csv should exist in TST."""
         project_map = build_project_map(HUB_ID)
-        rows = parse_csv(os.path.join(FIXTURES, "happy_path.csv"))
+        rows = parse_csv(os.path.join(FIXTURES, "FAKE_happy_path.csv"))
 
         resolved = 0
         for row in rows:
@@ -67,7 +70,7 @@ class TestProjectResolution:
 
 @pytest.mark.skipif(SKIP_LIVE, reason=SKIP_REASON)
 class TestProjectUsersFetch:
-    """Verify project member fetch works for a real project."""
+    """Verify project user fetch works for a real project."""
 
     def _get_first_project_id(self):
         project_map = build_project_map(HUB_ID)
@@ -75,21 +78,32 @@ class TestProjectUsersFetch:
             pytest.skip("No projects available")
         return list(project_map.values())[0]["id"]
 
-    def test_returns_member_set(self):
+    def test_returns_user_map(self):
         pid = self._get_first_project_id()
-        acc_member_set = fetch_project_users(pid)
-        assert isinstance(acc_member_set, set)
+        acc_user_map = fetch_project_users(pid)
+        assert isinstance(acc_user_map, dict)
 
-    def test_member_emails_are_lowercase(self):
+    def test_user_emails_are_lowercase(self):
         pid = self._get_first_project_id()
-        acc_member_set = fetch_project_users(pid)
-        for email in acc_member_set:
+        acc_user_map = fetch_project_users(pid)
+        for email in acc_user_map:
             assert email == email.lower(), f"Email '{email}' is not lowercase"
 
-    def test_nonexistent_user_not_in_members(self):
+    def test_user_has_expected_fields(self):
         pid = self._get_first_project_id()
-        acc_member_set = fetch_project_users(pid)
-        assert "definitely.not.a.real.user.xyz@example.com" not in acc_member_set
+        acc_user_map = fetch_project_users(pid)
+        if acc_user_map:
+            user = list(acc_user_map.values())[0]
+            assert "id" in user
+            assert "roleIds" in user
+            assert "companyId" in user
+            assert "products" in user
+            assert "accessLevels" in user
+
+    def test_nonexistent_user_not_in_map(self):
+        pid = self._get_first_project_id()
+        acc_user_map = fetch_project_users(pid)
+        assert "definitely.not.a.real.user.xyz@example.com" not in acc_user_map
 
 
 @pytest.mark.skipif(SKIP_LIVE, reason=SKIP_REASON)
@@ -138,7 +152,7 @@ class TestDryRunEndToEnd:
 
     def test_dry_run_happy_path(self, capsys):
         """Run dry-run on the happy_path fixture and check for expected output."""
-        csv_path = os.path.join(FIXTURES, "happy_path.csv")
+        csv_path = os.path.join(FIXTURES, "FAKE_happy_path.csv")
         rows = parse_csv(csv_path)
         project_map = build_project_map(HUB_ID)
 
@@ -155,7 +169,7 @@ class TestDryRunEndToEnd:
 
     def test_dry_run_error_cases(self):
         """Error cases CSV should parse without crashing."""
-        csv_path = os.path.join(FIXTURES, "error_cases.csv")
+        csv_path = os.path.join(FIXTURES, "FAKE_error_cases.csv")
         rows = parse_csv(csv_path)
         project_map = build_project_map(HUB_ID)
 
@@ -166,7 +180,7 @@ class TestDryRunEndToEnd:
 
     def test_dry_run_edge_cases(self):
         """Edge cases CSV should parse and normalize correctly."""
-        csv_path = os.path.join(FIXTURES, "edge_cases.csv")
+        csv_path = os.path.join(FIXTURES, "FAKE_edge_cases.csv")
         rows = parse_csv(csv_path)
         project_map = build_project_map(HUB_ID)
 

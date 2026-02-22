@@ -1,0 +1,15 @@
+first_name,last_name,email,project_name,roles,company,products,access_level
+Emmanuel,Mora,emmanuel.mora@swissgrid.ch,SAAA-ProvisionerAAA,Fachplaner,Swissgrid TST,Project Administration;Docs;Model Coordination;Build;Insight,Account Administrator;Project Administrator
+missing,missing,missing@example.com,SAAA-ProvisionerAAA,Fachplaner,Swissgrid TST,Docs;Insight;Build;Model Coordination,Project Member
+multi,role,multi.role@example.com,SAAA-ProvisionerAAA,Fachplaner;Lieferant_Gebäudetechnik,Swissgrid TST,Insight;Build;Model Coordination;Docs,Project Member
+na,roles,na.roles@example.com,SAAA-ProvisionerAAA,N/A,Swissgrid TST,Insight;Build;Model Coordination;Docs,Project Member
+no,roles,no.roles@example.com,SAAA-ProvisionerAAA,N/A,Swissgrid TST,Insight;Build;Model Coordination;Docs,Project Member
+test,admin1,test.admin1@example.com,SAAA-ProvisionerAAA,Lieferant_Gebäudetechnik,Swissgrid TST,Project Administration;Docs;Model Coordination;Build;Insight,Project Administrator
+test,multi,test.multi@example.com,SAAA-ProvisionerAAA,Swissgrid_intern;Fachplaner,Swissgrid TST,Docs;Model Coordination;Build;Insight,Project Member
+test,norole,test.norole@example.com,SAAA-ProvisionerAAA,N/A,Swissgrid TST,Docs;Model Coordination;Build;Insight,Project Member
+test,user1,test.user1@example.com,SAAA-ProvisionerAAA,Fachplaner,Swissgrid TST,Insight;Build;Model Coordination;Docs,Project Member
+test,user2,test.user2@example.com,SAAA-ProvisionerAAA,Swissgrid_intern,Swissgrid_2 TST,Insight;Build;Model Coordination;Docs,Project Member
+Emmanuel,Mora,emmanuel.mora@swissgrid.ch,SCCC-ProvisionerCCC,Swissgrid_intern,Swissgrid TST,Insight;Build;Docs;Model Coordination,Account Administrator
+test,admin2,test.admin2@example.com,SCCC-ProvisionerCCC,Fachplaner,Swissgrid TST,Project Administration;Docs;Insight;Build;Model Coordination,Project Administrator
+test,user3,test.user3@example.com,SCCC-ProvisionerCCC,Swissgrid_intern,Swissgrid_2 TST,Build;Docs;Model Coordination;Insight,Project Member
+Emmanuel,Mora,emmanuel.mora@swissgrid.ch,IN_ACC_but_Not_In_SF,Swissgrid_intern,Swissgrid TST,Project Administration;Docs;Insight;Model Coordination;Build,Account Administrator;Project Administrator

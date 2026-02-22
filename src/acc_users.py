@@ -6,6 +6,7 @@ roles, email, company, and products. Exports to CSV.
 
 import csv
 import os
+import sys
 import time
 from datetime import datetime
 
@@ -19,26 +20,6 @@ MAX_RETRIES = 5
 
 # Request timeout: (connect_timeout, read_timeout) in seconds
 REQUEST_TIMEOUT = (5, 30)
-
-# Product key to friendly name mapping
-PRODUCT_NAMES = {
-    "projectAdministration": "Project Administration",
-    "docs": "Docs",
-    "build": "Build",
-    "cost": "Cost",
-    "modelCoordination": "Model Coordination",
-    "designCollaboration": "Design Collaboration",
-    "takeoff": "Takeoff",
-    "quantification": "Quantification",
-    "assets": "Assets",
-    "insight": "Insight",
-    "accountAdministration": "Account Administration",
-    "field": "Field",
-    "fieldManagement": "Field Management",
-    "schedule": "Schedule",
-    "photos": "Photos",
-    "safety": "Safety",
-}
 
 
 def _strip_project_id(project_id):
@@ -158,22 +139,21 @@ def extract_user_row(user, project_name):
     role_names = _deduplicated(role_names)
     roles_str = ";".join(role_names) if role_names else "N/A"
 
-    # Products: collect active products (deduplicated)
-    product_names = []
+    # Products: collect active product keys (deduplicated)
+    product_keys = []
     products_list = user.get("products", [])
     for p in products_list:
         if isinstance(p, dict):
             access = p.get("access", "")
             if access and access.lower() != "none":
                 key = p.get("key", "")
-                friendly_name = PRODUCT_NAMES.get(key, key)
-                if friendly_name:
-                    product_names.append(friendly_name)
+                if key:
+                    product_keys.append(key)
         elif isinstance(p, str):
-            product_names.append(PRODUCT_NAMES.get(p, p))
+            product_keys.append(p)
 
-    product_names = _deduplicated(product_names)
-    products_str = ";".join(product_names) if product_names else "N/A"
+    product_keys = _deduplicated(product_keys)
+    products_str = ";".join(product_keys) if product_keys else "N/A"
 
     # Access level: derived from the accessLevels object (boolean flags)
     access_levels_obj = user.get("accessLevels", {})
@@ -239,9 +219,13 @@ def export_users_to_csv(rows, hub_name="unknown"):
         print("No user data to export.")
         return None
 
+    _project_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    output_dir = os.path.join(_project_root, "ACC_users")
+    os.makedirs(output_dir, exist_ok=True)
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_hub_name = hub_name.replace(" ", "_").replace("/", "-")
-    filename = f"users_{safe_hub_name}_{timestamp}.csv"
+    filename = os.path.join(output_dir, f"users_{safe_hub_name}_{timestamp}.csv")
 
     csv_headers = [
         "first_name",
@@ -267,26 +251,29 @@ def export_users_to_csv(rows, hub_name="unknown"):
 
 
 if __name__ == "__main__":
-    # Step 1: Get all Hubs
-    print("\nFetching Hubs...")
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Export all ACC project users to CSV.")
+    parser.add_argument("hub_env_key", nargs="?", default=HUB_KEY, help=f"Hub key from .env (default: {HUB_KEY})")
+    args = parser.parse_args()
+
+    hub_id = os.getenv(args.hub_env_key, "")
+    if not hub_id:
+        print(f"Error: Hub key '{args.hub_env_key}' not found in .env")
+        sys.exit(1)
+
+    # Usage:
+    #   python src\acc_users.py                  → uses default hub (Swissgrid_TST)
+    #   python src\acc_users.py Swissgrid_AG     → uses AG hub
+
+    print(f"\nFetching Hubs...")
     hubs = get_hubs()
 
     if hubs:
-        # Step 2: Select hub (default from .env)
-        default_hub = HUB_ID
-        hub_id_input = input(
-            f"Enter a Hub ID to fetch project users [{HUB_KEY}={default_hub}]: "
-        ).strip() or default_hub
+        rows, hub_name = fetch_all_users_for_hub(hub_id, hubs)
 
-        if hub_id_input:
-            # Step 3: Fetch all users across all projects
-            rows, hub_name = fetch_all_users_for_hub(hub_id_input, hubs)
-
-            if rows:
-                # Step 4: Export to CSV
-                print("\nExporting users to CSV...")
-                export_users_to_csv(rows, hub_name)
-            else:
-                print("\nNo users found across any projects.")
+        if rows:
+            print("\nExporting users to CSV...")
+            export_users_to_csv(rows, hub_name)
         else:
-            print("No Hub ID entered. Exiting.")
+            print("\nNo users found across any projects.")

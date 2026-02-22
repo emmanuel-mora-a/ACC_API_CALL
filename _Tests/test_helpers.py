@@ -2,13 +2,13 @@
 Unit tests for helper functions: _strip_id, deduplication, project map building.
 No API calls — pure Python logic only.
 
-Run:  python -m pytest tests/test_helpers.py -v
+Run:  python -m pytest _Tests/test_helpers.py -v
 """
 
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from acc_provisioner import _strip_id
 

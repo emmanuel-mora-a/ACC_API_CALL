@@ -1,13 +1,15 @@
 """
 Autodesk Construction Cloud (ACC) - User Provisioner
-Reads a CSV of users and adds each user to the specified ACC project
-with the correct roles, products, and access level (Member or Administrator).
+Reads a CSV of users and provisions them to ACC projects:
+  - New users are imported with roles, products, company, and access level.
+  - Existing users are compared (role, company, access_level) and updated
+    only if any field differs. CSV = desired final state for roles.
 
 Usage:
     python acc_provisioner.py <csv_file> [hub_env_key] [--dry-run]
 
     --dry-run : Run the full pipeline (CSV parse, project/role lookup,
-                membership check) but skip the actual user import POST call.
+                comparison) but skip actual import/update API calls.
 """
 
 import argparse
@@ -22,7 +24,8 @@ import requests
 from auth import get_auth_headers, BASE_URL, HUB_KEY, HUB_ID, ACC_ENV, USER_ID
 from acc_hub_projects import get_hubs, get_projects
 
-ROLE_JSON_PATH = os.path.join(os.path.dirname(__file__), "data_acc", "role_id_acc.json")
+_PROJECT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+ROLE_JSON_PATH = os.path.join(_PROJECT_ROOT, "ACC_roles", "role_id_acc.json")
 
 
 REQUEST_TIMEOUT = (5, 30)
@@ -203,12 +206,13 @@ def fetch_account_companies(hub_id):
 
 def fetch_project_users(project_id):
     """Fetch all users for a project.
-    Returns acc_member_set: set of lowercase emails already in the project.
+    Returns acc_user_map: dict of lowercase_email -> user detail dict
+    containing id, roleIds, companyId, products, and accessLevels.
     """
     clean_id = _strip_id(project_id)
     url = f"{BASE_URL}/construction/admin/v1/projects/{clean_id}/users"
 
-    acc_member_set = set()
+    acc_user_map = {}
     offset = 0
     limit = 100
 
@@ -223,7 +227,13 @@ def fetch_project_users(project_id):
         for u in users:
             email = u.get("email", "").strip().lower()
             if email:
-                acc_member_set.add(email)
+                acc_user_map[email] = {
+                    "id": u.get("id", ""),
+                    "roleIds": u.get("roleIds", []),
+                    "companyId": u.get("companyId", ""),
+                    "products": u.get("products", []),
+                    "accessLevels": u.get("accessLevels", {}),
+                }
 
         if isinstance(data, dict):
             total = data.get("pagination", {}).get("totalResults", 0)
@@ -234,7 +244,94 @@ def fetch_project_users(project_id):
 
         offset += limit
 
-    return acc_member_set
+    return acc_user_map
+
+
+# ---------------------------------------------------------------------------
+# PATCH helper
+# ---------------------------------------------------------------------------
+
+def _api_patch(url, json_body, extra_headers=None):
+    """PATCH with timeout, retry on 429."""
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            headers = get_auth_headers()
+            if extra_headers:
+                headers.update(extra_headers)
+            resp = requests.patch(url, headers=headers, json=json_body, timeout=REQUEST_TIMEOUT)
+        except requests.RequestException as e:
+            return None, str(e)
+
+        if resp.status_code == 429:
+            wait = int(resp.headers.get("Retry-After", 5))
+            if attempt < MAX_RETRIES:
+                time.sleep(wait)
+                continue
+            return None, "rate limited after max retries"
+
+        return resp, None
+
+    return None, "exhausted retries"
+
+
+# ---------------------------------------------------------------------------
+# Detect differences between existing ACC user and desired CSV state
+# ---------------------------------------------------------------------------
+
+def _detect_changes(existing_user, desired_role_ids, desired_company_id, desired_access_level):
+    """Compare existing ACC user with CSV desired state.
+    Returns (changes_dict, reasons_list).
+    changes_dict contains only the fields that need to be PATCHed.
+    reasons_list contains human-readable descriptions of what changed.
+    """
+    changes = {}
+    reasons = []
+
+    # Roles: only compare if CSV specifies roles (non-empty)
+    if desired_role_ids:
+        existing_roles = set(existing_user.get("roleIds", []))
+        desired_roles = set(desired_role_ids)
+        if existing_roles != desired_roles:
+            changes["roleIds"] = desired_role_ids
+            reasons.append("role changed")
+
+    # Company: only compare if CSV company resolved to an ID
+    if desired_company_id:
+        existing_company = existing_user.get("companyId", "")
+        if existing_company != desired_company_id:
+            changes["companyId"] = desired_company_id
+            reasons.append("company changed")
+
+    # Access level: always compare (CSV always has Member or Administrator)
+    is_admin = _is_admin(desired_access_level)
+    existing_is_admin = existing_user.get("accessLevels", {}).get("projectAdmin", False)
+    if is_admin != existing_is_admin:
+        changes["products"] = list(ADMIN_PRODUCTS if is_admin else MEMBER_PRODUCTS)
+        reasons.append("access_level changed")
+
+    return changes, reasons
+
+
+# ---------------------------------------------------------------------------
+# User update (PATCH)
+# ---------------------------------------------------------------------------
+
+def update_user_in_project(project_id, user_id, changes):
+    """PATCH a user's fields in a project.
+    Returns (success: bool, error_message: str).
+    """
+    clean_id = _strip_id(project_id)
+    url = f"{BASE_URL}/construction/admin/v1/projects/{clean_id}/users/{user_id}"
+
+    extra = {"x-user-id": USER_ID} if USER_ID else None
+    resp, err = _api_patch(url, changes, extra_headers=extra)
+    if err:
+        return False, err
+
+    if resp.status_code != 200:
+        return False, f"HTTP {resp.status_code}: {resp.text[:300]}"
+
+    return True, ""
 
 
 # ---------------------------------------------------------------------------
@@ -316,7 +413,7 @@ def parse_csv(path):
 # Main orchestration
 # ---------------------------------------------------------------------------
 
-def print_summary(added, skipped, failed):
+def print_summary(added, updated, skipped, failed):
     print("\n" + "=" * 70)
     print("  SUMMARY")
     print("=" * 70)
@@ -325,7 +422,11 @@ def print_summary(added, skipped, failed):
     for r in added:
         print(f"    + {r['email']} -> {r['project_name']}")
 
-    print(f"\n  Skipped (already member): {len(skipped)}")
+    print(f"\n  Updated: {len(updated)}")
+    for r in updated:
+        print(f"    ~ {r['email']} -> {r['project_name']} ({r['reason']})")
+
+    print(f"\n  Skipped (no changes): {len(skipped)}")
     for r in skipped:
         print(f"    - {r['email']} -> {r['project_name']}")
 
@@ -346,11 +447,11 @@ def main():
     args = parser.parse_args()
 
     # Usage examples:
-    #   python acc_provisioner.py data_user_import\one_user.csv                           → production run
-    #   python acc_provisioner.py data_user_import\one_user.csv --dry-run                 → simulate only
-    #   python acc_provisioner.py data_user_import\one_user.csv Swissgrid_AG              → different hub
-    #   python acc_provisioner.py data_user_import\one_user.csv Swissgrid_AG --dry-run    → different hub + dry-run
-    #   python acc_provisioner.py --help                                                  → show all options
+    #   python src\acc_provisioner.py DATA_user_import\FAKE_one_user.csv                           → production run
+    #   python src\acc_provisioner.py DATA_user_import\FAKE_mock_import.csv --dry-run              → simulate with test data
+    #   python src\acc_provisioner.py DATA_user_import\FAKE_one_user.csv Swissgrid_AG              → different hub
+    #   python src\acc_provisioner.py DATA_user_import\FAKE_one_user.csv Swissgrid_AG --dry-run    → different hub + dry-run
+    #   python src\acc_provisioner.py --help                                                       → show all options
 
 
     csv_path = args.csv_file
@@ -387,27 +488,28 @@ def main():
     acc_company_map = fetch_account_companies(hub_id)
     print(f"  {len(acc_company_map)} companies found")
 
-    # --- Pre-fetch project members per project ---
-    acc_member_cache = {}  # project_id -> acc_member_set
+    # --- Pre-fetch project users per project ---
+    acc_member_cache = {}  # project_id -> acc_user_map (email -> user details)
 
     unique_projects = set()
     for row in rows:
         unique_projects.add(row["project_name"].strip().lower())
 
-    print(f"\nPre-fetching members for {len(unique_projects)} unique projects...")
+    print(f"\nPre-fetching users for {len(unique_projects)} unique projects...")
     for proj_name in unique_projects:
         proj = acc_project_map.get(proj_name)
         if not proj:
             continue
         pid = proj["id"]
         if pid not in acc_member_cache:
-            print(f"  Fetching members for: {proj['name']}...")
-            acc_member_set = fetch_project_users(pid)
-            acc_member_cache[pid] = acc_member_set
-            print(f"    {len(acc_member_set)} members")
+            print(f"  Fetching users for: {proj['name']}...")
+            acc_user_map = fetch_project_users(pid)
+            acc_member_cache[pid] = acc_user_map
+            print(f"    {len(acc_user_map)} users")
 
     # --- Process rows ---
     added = []
+    updated = []
     skipped = []
     failed = []
     seen = set()
@@ -435,7 +537,7 @@ def main():
             continue
 
         project_id = proj["id"]
-        acc_member_set = acc_member_cache.get(project_id, set())
+        acc_user_map = acc_member_cache.get(project_id, {})
 
         # 2. Resolve roles from JSON (CSV has name, JSON maps name -> id)
         role_ids = []
@@ -457,13 +559,37 @@ def main():
         if company and not company_id:
             print(f"    (!) Company not found: {company}")
 
-        # 4. Check membership
-        if email in acc_member_set:
-            print(f"  {label} ... SKIPPED (already member)")
-            skipped.append({"email": email, "project_name": project_name, "reason": "already member"})
+        # 4. Check if user already exists in the project
+        if email in acc_user_map:
+            existing_user = acc_user_map[email]
+            changes, reasons = _detect_changes(
+                existing_user, role_ids, company_id, row["access_level"]
+            )
+
+            if not changes:
+                print(f"  {label} ... SKIPPED (no changes needed)")
+                skipped.append({"email": email, "project_name": project_name, "reason": "no changes needed"})
+                continue
+
+            reason_str = ", ".join(reasons)
+
+            if dry_run:
+                print(f"  {label} ... WOULD UPDATE ({reason_str})")
+                updated.append({"email": email, "project_name": project_name, "reason": reason_str})
+            else:
+                success, err_msg = update_user_in_project(
+                    project_id, existing_user["id"], changes
+                )
+                if success:
+                    print(f"  {label} ... UPDATED ({reason_str})")
+                    updated.append({"email": email, "project_name": project_name, "reason": reason_str})
+                else:
+                    print(f"  {label} ... FAILED ({err_msg})")
+                    failed.append({"email": email, "project_name": project_name, "reason": err_msg})
+                time.sleep(0.3)
             continue
 
-        # 5. Import user (or simulate in dry-run)
+        # 5. User not in project -> Import (or simulate in dry-run)
         if dry_run:
             level = "Administrator" if _is_admin(row["access_level"]) else "Member"
             print(f"  {label} ... WOULD ADD (level={level}, roles={role_ids}, company={company_id or 'N/A'})")
@@ -476,7 +602,7 @@ def main():
             if success:
                 print(f"  {label} ... ADDED")
                 added.append({"email": email, "project_name": project_name})
-                acc_member_set.add(email)
+                acc_user_map[email] = {}
             else:
                 print(f"  {label} ... FAILED ({err_msg})")
                 failed.append({"email": email, "project_name": project_name, "reason": err_msg})
@@ -484,13 +610,13 @@ def main():
             time.sleep(0.3)
 
     # --- Summary ---
-    print_summary(added, skipped, failed)
+    print_summary(added, updated, skipped, failed)
     if dry_run:
         print("  (dry-run: nothing was actually changed)\n")
 
     # --- Write report CSV ---
     mode_label = "dryrun" if dry_run else "report"
-    report_dir = os.path.join(os.path.dirname(__file__), "report")
+    report_dir = os.path.join(_PROJECT_ROOT, "_Reports")
     os.makedirs(report_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     report_path = os.path.join(report_dir, f"provisioner_{mode_label}_{timestamp}.csv")
@@ -500,6 +626,9 @@ def main():
         for r in added:
             status = "would_add" if dry_run else "added"
             writer.writerow([r["email"], r["project_name"], status, ""])
+        for r in updated:
+            status = "would_update" if dry_run else "updated"
+            writer.writerow([r["email"], r["project_name"], status, r["reason"]])
         for r in skipped:
             writer.writerow([r["email"], r["project_name"], "skipped", r.get("reason", "")])
         for r in failed:
