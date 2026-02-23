@@ -277,7 +277,10 @@ def _api_patch(url, json_body, extra_headers=None):
 # ---------------------------------------------------------------------------
 # Detect differences between existing ACC user and desired CSV state
 # ---------------------------------------------------------------------------
-
+# existing_user -> ACC data
+# desired_role_ids -> CSV roles → resolved to IDs via JSON
+# desired_company_id -> CSV company → resolved to ID via ACC companies
+# desired_access_level -> CSV raw string ("Member" or "Administrator")
 def _detect_changes(existing_user, desired_role_ids, desired_company_id, desired_access_level):
     """Compare existing ACC user with CSV desired state.
     Returns (changes_dict, reasons_list).
@@ -420,7 +423,7 @@ def print_summary(added, updated, skipped, failed):
 
     print(f"\n  Added: {len(added)}")
     for r in added:
-        print(f"    + {r['email']} -> {r['project_name']}")
+        print(f"    + {r['email']} -> {r['project_name']} (roles={r['roles']}, level={r['level']})")
 
     print(f"\n  Updated: {len(updated)}")
     for r in updated:
@@ -569,7 +572,7 @@ def main():
             if not changes:
                 print(f"  {label} ... SKIPPED (no changes needed)")
                 skipped.append({"email": email, "project_name": project_name, "reason": "no changes needed"})
-                continue
+                continue # in case there are no changes, we skip the user
 
             reason_str = ", ".join(reasons)
 
@@ -590,10 +593,12 @@ def main():
             continue
 
         # 5. User not in project -> Import (or simulate in dry-run)
+        level = "Administrator" if _is_admin(row["access_level"]) else "Member"
+        role_names = ";".join(row["roles"]) if row["roles"] else "N/A"
+
         if dry_run:
-            level = "Administrator" if _is_admin(row["access_level"]) else "Member"
-            print(f"  {label} ... WOULD ADD (level={level}, roles={role_ids}, company={company_id or 'N/A'})")
-            added.append({"email": email, "project_name": project_name})
+            print(f"  {label} ... WOULD ADD (level={level}, roles={role_names}, company={company_id or 'N/A'})")
+            added.append({"email": email, "project_name": project_name, "roles": role_names, "level": level})
         else:
             success, err_msg = import_user_to_project(
                 project_id, email, role_ids, row["access_level"], company_id
@@ -601,7 +606,7 @@ def main():
 
             if success:
                 print(f"  {label} ... ADDED")
-                added.append({"email": email, "project_name": project_name})
+                added.append({"email": email, "project_name": project_name, "roles": role_names, "level": level})
                 acc_user_map[email] = {}
             else:
                 print(f"  {label} ... FAILED ({err_msg})")

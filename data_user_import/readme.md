@@ -36,3 +36,18 @@ test.multi → SAAA, two roles	Multiple roles separated by semicolon
 test.norole → SAAA, no role	No role assigned → import without roleIds
 test.badproject → NonExistent	Project not found → should log failure
 test.user1 duplicate	Exact duplicate of row 1 → should be skipped
+
+
+
+
+
+ACC_API_CALLS/
+├── src/                    ← all Python source code together
+├── ACC_roles/              ← role configuration data
+├── ACC_Projects/           ← (empty, for project data?)
+├── ACC_users/              ← (empty, for user data?)
+├── DATA_user_import/       ← CSV input files
+├── _Reports/               ← generated output
+├── _Tests/                 ← test suite
+├── .env
+└── .gitignore
