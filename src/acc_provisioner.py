@@ -6,7 +6,7 @@ Reads a CSV of users and provisions them to ACC projects:
     only if any field differs. CSV = desired final state for roles.
 
 Usage:
-    python acc_provisioner.py <csv_file> [hub_env_key] [--dry-run]
+    python acc_provisioner.py <csv_file> [target] [--dry-run]
 
     --dry-run : Run the full pipeline (CSV parse, project/role lookup,
                 comparison) but skip actual import/update API calls.
@@ -21,11 +21,13 @@ import time
 from datetime import datetime
 
 import requests
-from auth import get_auth_headers, BASE_URL, HUB_KEY, HUB_ID, ACC_ENV, USER_ID
+import auth
+from auth import get_auth_headers, BASE_URL
 from acc_hub_projects import get_hubs, get_projects
 
 _PROJECT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-ROLE_JSON_PATH = os.path.join(_PROJECT_ROOT, "ACC_roles", "role_id_acc.json")
+ROLE_JSON_PATH_TST = os.path.join(_PROJECT_ROOT, "ACC_roles", "role_id_acc_TST.json")
+ROLE_JSON_PATH_AG = os.path.join(_PROJECT_ROOT, "ACC_roles", "role_id_acc_AG.json")
 
 
 REQUEST_TIMEOUT = (5, 30)
@@ -124,7 +126,13 @@ def _api_post(url, json_body, extra_headers=None):
 # Role lookup from JSON file
 # ---------------------------------------------------------------------------
 
-def load_role_map_from_json(path=ROLE_JSON_PATH):
+def get_role_json_path_for_env(env_name):
+    """Return role-map JSON path for the selected environment."""
+    env = (env_name or "").strip().upper()
+    return ROLE_JSON_PATH_AG if env == "AG" else ROLE_JSON_PATH_TST
+
+
+def load_role_map_from_json(path):
     """Load role name -> role ID mapping from the JSON file.
     Returns dict of lowercase_name -> role_id.
     """
@@ -132,15 +140,30 @@ def load_role_map_from_json(path=ROLE_JSON_PATH):
         print(f"  Warning: role JSON not found at {path}")
         return {}
 
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except json.JSONDecodeError:
+        print(f"  Warning: role JSON is invalid/empty at {path}")
+        return {}
 
     role_map = {}
-    for r in data.get("roles", []):
-        name = r.get("name", "").strip().lower()
-        rid = r.get("id", "")
-        if name and rid:
-            role_map[name] = rid
+    # Format A: {"roles": [{"name": "...", "id": "..."}]}
+    if isinstance(data, dict) and isinstance(data.get("roles"), list):
+        for r in data.get("roles", []):
+            name = r.get("name", "").strip().lower()
+            rid = r.get("id", "")
+            if name and rid:
+                role_map[name] = rid
+        return role_map
+
+    # Format B: {"role_name": "role_id", ...}
+    if isinstance(data, dict):
+        for name, rid in data.items():
+            clean_name = str(name).strip().lower()
+            clean_id = str(rid).strip()
+            if clean_name and clean_id:
+                role_map[clean_name] = clean_id
     return role_map
 
 
@@ -326,7 +349,7 @@ def update_user_in_project(project_id, user_id, changes):
     clean_id = _strip_id(project_id)
     url = f"{BASE_URL}/construction/admin/v1/projects/{clean_id}/users/{user_id}"
 
-    extra = {"x-user-id": USER_ID} if USER_ID else None
+    extra = {"x-user-id": auth.USER_ID} if auth.USER_ID else None
     resp, err = _api_patch(url, changes, extra_headers=extra)
     if err:
         return False, err
@@ -369,7 +392,7 @@ def import_user_to_project(project_id, email, role_ids, access_level, company_id
 
     body = {"users": [user_payload]}
 
-    extra = {"x-user-id": USER_ID} if USER_ID else None #: The users:import endpoint doesn't accept a plain 2-legged token. The x-user-id header tells the API "act on behalf of this admin user." Without it, the API returns 401 Unauthorized — which is exactly what happened before we added it.
+    extra = {"x-user-id": auth.USER_ID} if auth.USER_ID else None #: The users:import endpoint doesn't accept a plain 2-legged token. The x-user-id header tells the API "act on behalf of this admin user." Without it, the API returns 401 Unauthorized — which is exactly what happened before we added it.
     resp, err = _api_post(url, body, extra_headers=extra)
     if err:
         return False, err
@@ -443,25 +466,46 @@ def print_summary(added, updated, skipped, failed):
 def main():
     parser = argparse.ArgumentParser( description="Provision ACC users from a CSV file.")
     parser.add_argument("csv_file", help="Path to the input CSV file")
-    parser.add_argument("hub_env_key", nargs="?", default=HUB_KEY, help=f"Hub key from .env (default: {HUB_KEY})",)
+    parser.add_argument("target", nargs="?", default=None, help="Environment (TST/AG) or hub key (e.g. Swissgrid_TST)")
     #action="store_true" -- if the user includes --dry-run, set it to True. If they don't, it defaults to False
     #python acc_provisioner.py data.csv --dry-run    # dry_run = True  → only simulates, no API calls
     parser.add_argument("--dry-run", action="store_true",help="Validate everything but skip the actual user import API call",) 
-    args = parser.parse_args()
+    args, extras = parser.parse_known_args()
+    if extras:
+        if args.target is None and len(extras) == 1:
+            args.target = extras[0]
+        else:
+            parser.error(f"unrecognized arguments: {' '.join(extras)}")
 
     # Usage examples:
-    #   python src\acc_provisioner.py DATA_user_import\FAKE_one_user.csv                           → production run
-    #   python src\acc_provisioner.py DATA_user_import\FAKE_mock_import.csv --dry-run              → simulate with test data
-    #   python src\acc_provisioner.py DATA_user_import\FAKE_one_user.csv Swissgrid_AG              → different hub
-    #   python src\acc_provisioner.py DATA_user_import\FAKE_one_user.csv Swissgrid_AG --dry-run    → different hub + dry-run
-    #   python src\acc_provisioner.py --help                                                       → show all options
+    #   python src\acc_provisioner.py DATA_user_import\FAKE_one_user.csv                    -> current auth env default hub
+    #   python src\acc_provisioner.py DATA_user_import\FAKE_one_user.csv TST                -> TST hub
+    #   python src\acc_provisioner.py DATA_user_import\FAKE_one_user.csv AG                 -> AG hub
+    #   python src\acc_provisioner.py DATA_user_import\FAKE_one_user.csv --dry-run TST      -> TST dry-run
+    #   python src\acc_provisioner.py DATA_user_import\FAKE_one_user.csv --dry-run AG       -> AG dry-run
+    #   python src\acc_provisioner.py --help                                                 -> show all options
 
 
     csv_path = args.csv_file
-    hub_key = args.hub_env_key
+    target = (args.target or "").strip()
     dry_run = args.dry_run
 
-    print(f"\n  Environment: {ACC_ENV} (hub: {hub_key})")
+    if not target:
+        env = auth.ACC_ENV
+        hub_key = auth.HUB_KEY
+    elif target.upper() in {"TST", "AG"}:
+        env = target.upper()
+        hub_key = f"Swissgrid_{env}"
+    elif target in {"Swissgrid_TST", "Swissgrid_AG"}:
+        hub_key = target
+        env = target.split("_")[-1].upper()
+    else:
+        print("Error: target must be TST, AG, Swissgrid_TST, or Swissgrid_AG")
+        sys.exit(1)
+
+    auth.set_acc_env(env)
+
+    print(f"\n  Environment: {auth.ACC_ENV} (hub: {hub_key})")
 
     if dry_run:
         print("  *** DRY-RUN MODE — no users will actually be imported ***")
@@ -476,9 +520,10 @@ def main():
     rows = parse_csv(csv_path)
     print(f"  {len(rows)} rows loaded")
 
-    # --- Load role map from JSON ---
-    print(f"\nLoading role map from: {ROLE_JSON_PATH}")
-    role_map = load_role_map_from_json()
+    # --- Load role map from env-specific JSON ---
+    role_json_path = get_role_json_path_for_env(auth.ACC_ENV)
+    print(f"\nLoading role map from: {role_json_path}")
+    role_map = load_role_map_from_json(role_json_path)
     print(f"  {len(role_map)} roles loaded")
 
     # --- Fetch projects and build name -> ID map ---
@@ -554,7 +599,11 @@ def main():
             if r.strip().lower() not in role_map
         ]
         if unresolved_roles:
-            print(f"    (!) Unresolved roles: {', '.join(unresolved_roles)}")
+            unresolved_str = ", ".join(unresolved_roles)
+            reason = f"role does not exist in the HUB, user skipped ({unresolved_str})"
+            print(f"  {label} ... SKIPPED ({reason})")
+            skipped.append({"email": email, "project_name": project_name, "reason": reason})
+            continue
 
         # 3. Resolve companyId
         company = row["company"]

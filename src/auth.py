@@ -13,22 +13,51 @@ from dotenv import load_dotenv
 _PROJECT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 load_dotenv(os.path.join(_PROJECT_ROOT, ".env"), override=True)
 
-# --- Environment selection (change this one value to switch) ---
-ACC_ENV = "TST"
+# --- Environment selection ---
+# You can override by setting ACC_ENV in .env to TST or AG.
+DEFAULT_ACC_ENV = os.getenv("ACC_ENV", "TST").strip().upper()
+if DEFAULT_ACC_ENV not in {"TST", "AG"}:
+    DEFAULT_ACC_ENV = "TST"
 
-CLIENT_ID = os.getenv(f"APS_CLIENT_ID_{ACC_ENV}")
-CLIENT_SECRET = os.getenv(f"APS_CLIENT_SECRET_{ACC_ENV}")
-USER_ID = os.getenv(f"APS_USER_ID_{ACC_ENV}", "")
-HUB_KEY = f"Swissgrid_{ACC_ENV}"
-HUB_ID = os.getenv(HUB_KEY, "")
+ACC_ENV = DEFAULT_ACC_ENV
+CLIENT_ID = ""
+CLIENT_SECRET = ""
+USER_ID = ""
+HUB_KEY = ""
+HUB_ID = ""
 
 BASE_URL = "https://developer.api.autodesk.com"
 TOKEN_URL = f"{BASE_URL}/authentication/v2/token"
 
-_token_cache = {
-    "access_token": None,
-    "expires_at": 0,
-}
+_token_cache_by_env = {}
+
+
+def _current_cache():
+    """Return the token cache for the currently selected environment."""
+    if ACC_ENV not in _token_cache_by_env:
+        _token_cache_by_env[ACC_ENV] = {"access_token": None, "expires_at": 0}
+    return _token_cache_by_env[ACC_ENV]
+
+
+def set_acc_env(env_name):
+    """Switch active auth environment at runtime (TST or AG)."""
+    global ACC_ENV, CLIENT_ID, CLIENT_SECRET, USER_ID, HUB_KEY, HUB_ID
+
+    env = (env_name or "").strip().upper()
+    if env not in {"TST", "AG"}:
+        raise ValueError("Invalid environment. Use 'TST' or 'AG'.")
+
+    ACC_ENV = env
+    CLIENT_ID = os.getenv(f"APS_CLIENT_ID_{ACC_ENV}", "")
+    CLIENT_SECRET = os.getenv(f"APS_CLIENT_SECRET_{ACC_ENV}", "")
+    USER_ID = os.getenv(f"APS_USER_ID_{ACC_ENV}", "")
+    HUB_KEY = f"Swissgrid_{ACC_ENV}"
+    HUB_ID = os.getenv(HUB_KEY, "")
+    _current_cache()  # Ensure cache exists for this env.
+
+
+# Initialize env-specific globals once at import time.
+set_acc_env(DEFAULT_ACC_ENV)
 
 
 def _fetch_new_token():
@@ -58,8 +87,9 @@ def _fetch_new_token():
     access_token = token_data["access_token"]
     expires_in = token_data.get("expires_in", 3600)
 
-    _token_cache["access_token"] = access_token
-    _token_cache["expires_at"] = time.time() + expires_in - 60
+    cache = _current_cache()
+    cache["access_token"] = access_token
+    cache["expires_at"] = time.time() + expires_in - 60
 
     print(f"  [Auth] Token acquired (expires in {expires_in // 60} minutes)")
     return access_token
@@ -67,8 +97,9 @@ def _fetch_new_token():
 
 def get_access_token():
     """Return a valid access token, refreshing automatically if expired."""
-    if _token_cache["access_token"] and time.time() < _token_cache["expires_at"]:
-        return _token_cache["access_token"]
+    cache = _current_cache()
+    if cache["access_token"] and time.time() < cache["expires_at"]:
+        return cache["access_token"]
     return _fetch_new_token()
 
 

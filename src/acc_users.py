@@ -11,7 +11,8 @@ import time
 from datetime import datetime
 
 import requests
-from auth import get_auth_headers, BASE_URL, HUB_KEY, HUB_ID, ACC_ENV
+import auth
+from auth import get_auth_headers, BASE_URL
 from acc_hub_projects import get_hubs, get_projects
 
 
@@ -173,8 +174,8 @@ def extract_user_row(user, project_name):
     return [first_name, last_name, email, project_name, roles_str, company, products_str, access_level]
 
 
-def fetch_all_users_for_hub(hub_id, hubs):
-    """Fetch users for every project in a hub. Returns list of CSV rows."""
+def fetch_all_users_for_hub(hub_id, hubs, project_name_filter=None):
+    """Fetch users for every project in a hub (or one filtered project). Returns list of CSV rows."""
     # Find hub name
     hub_name = "unknown"
     for hub in hubs:
@@ -188,6 +189,17 @@ def fetch_all_users_for_hub(hub_id, hubs):
     if not projects:
         print("No projects found.")
         return [], hub_name
+
+    if project_name_filter:
+        wanted = project_name_filter.strip().lower()
+        filtered_projects = [
+            p for p in projects
+            if p.get("attributes", {}).get("name", "").strip().lower() == wanted
+        ]
+        if not filtered_projects:
+            print(f"\nProject not found in hub '{hub_name}': {project_name_filter}")
+            return [], hub_name
+        projects = filtered_projects
 
     all_rows = []
     total_projects = len(projects)
@@ -254,26 +266,75 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Export all ACC project users to CSV.")
-    parser.add_argument("hub_env_key", nargs="?", default=HUB_KEY, help=f"Hub key from .env (default: {HUB_KEY})")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Fetch and display counts, but do not write the output CSV",
+    )
+    parser.add_argument(
+        "--project-name",
+        default=None,
+        help="Fetch users only from this exact project name",
+    )
+    parser.add_argument(
+        "target",
+        nargs="?",
+        default=None,
+        help="Environment (TST/AG) or hub key (e.g. Swissgrid_TST)",
+    )
+    args, extras = parser.parse_known_args()
+    if extras:
+        if args.target is None and len(extras) == 1:
+            args.target = extras[0]
+        else:
+            parser.error(f"unrecognized arguments: {' '.join(extras)}")
 
-    hub_id = os.getenv(args.hub_env_key, "")
+    # Backward-compatible target resolution:
+    # - TST / AG                        -> selects env and corresponding Swissgrid_<ENV> hub key
+    # - Swissgrid_TST / Swissgrid_AG    -> uses that explicit hub key and infers env from suffix
+    target = (args.target or "").strip()
+    if not target:
+        env = auth.ACC_ENV
+        hub_key = auth.HUB_KEY
+    elif target.upper() in {"TST", "AG"}:
+        env = target.upper()
+        hub_key = f"Swissgrid_{env}"
+    elif target in {"Swissgrid_TST", "Swissgrid_AG"}:
+        hub_key = target
+        env = target.split("_")[-1].upper()
+    else:
+        print("Error: target must be TST, AG, Swissgrid_TST, or Swissgrid_AG")
+        sys.exit(1)
+
+    auth.set_acc_env(env)
+    hub_id = os.getenv(hub_key, "")
     if not hub_id:
-        print(f"Error: Hub key '{args.hub_env_key}' not found in .env")
+        print(f"Error: Hub key '{hub_key}' not found in .env")
         sys.exit(1)
 
     # Usage:
-    #   python src\acc_users.py                  → uses default hub (Swissgrid_TST)
-    #   python src\acc_users.py Swissgrid_AG     → uses AG hub
+    #   python src\acc_users.py                                      -> uses current auth env default hub
+    #   python src\acc_users.py TST                                  -> TST hub
+    #   python src\acc_users.py AG                                   -> AG hub
+    #   python src\acc_users.py --dry-run TST                        -> TST dry-run (no CSV write)
+    #   python src\acc_users.py --dry-run AG                         -> AG dry-run (no CSV write)
+    #   python src\acc_users.py TST --project-name "SAAA-ProvisionerAAA"             -> one project
+    #   python src\acc_users.py --dry-run AG --project-name "TR1040_N00000680"       -> one project dry-run
 
+    print(f"\nEnvironment: {auth.ACC_ENV} (hub: {hub_key})")
+    if args.dry_run:
+        print("  *** DRY-RUN MODE — no CSV will be written ***")
     print(f"\nFetching Hubs...")
     hubs = get_hubs()
 
     if hubs:
-        rows, hub_name = fetch_all_users_for_hub(hub_id, hubs)
+        rows, hub_name = fetch_all_users_for_hub(hub_id, hubs, project_name_filter=args.project_name)
 
         if rows:
-            print("\nExporting users to CSV...")
-            export_users_to_csv(rows, hub_name)
+            if args.dry_run:
+                print(f"\nDry-run complete. Would export {len(rows)} rows for hub '{hub_name}'.")
+            else:
+                print("\nExporting users to CSV...")
+                export_users_to_csv(rows, hub_name)
         else:
             print("\nNo users found across any projects.")

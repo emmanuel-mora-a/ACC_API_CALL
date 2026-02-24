@@ -10,7 +10,8 @@ import sys
 from datetime import datetime
 
 import requests
-from auth import get_auth_headers, BASE_URL, HUB_KEY, HUB_ID, ACC_ENV
+import auth
+from auth import get_auth_headers, BASE_URL
 
 
 def get_hubs():
@@ -156,18 +157,41 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="List ACC hubs and projects, export to CSV.")
-    parser.add_argument("hub_env_key", nargs="?", default=HUB_KEY, help=f"Hub key from .env (default: {HUB_KEY})")
+    parser.add_argument(
+        "target",
+        nargs="?",
+        default=None,
+        help="Environment (TST/AG) or hub key (e.g. Swissgrid_TST)",
+    )
     args = parser.parse_args()
 
-    hub_id = os.getenv(args.hub_env_key, "")
+    target = (args.target or "").strip()
+    if not target:
+        env = auth.ACC_ENV
+        hub_key = auth.HUB_KEY
+    elif target.upper() in {"TST", "AG"}:
+        env = target.upper()
+        hub_key = f"Swissgrid_{env}"
+    elif target in {"Swissgrid_TST", "Swissgrid_AG"}:
+        hub_key = target
+        env = target.split("_")[-1].upper()
+    else:
+        print("Error: target must be TST, AG, Swissgrid_TST, or Swissgrid_AG")
+        sys.exit(1)
+
+    auth.set_acc_env(env)
+    hub_id = os.getenv(hub_key, "")
     if not hub_id:
-        print(f"Error: Hub key '{args.hub_env_key}' not found in .env")
+        print(f"Error: Hub key '{hub_key}' not found in .env")
         sys.exit(1)
 
     # Usage:
-    #   python src\acc_hub_projects.py                  → uses default hub (Swissgrid_TST)
-    #   python src\acc_hub_projects.py Swissgrid_AG     → uses AG hub
+    #   python src\acc_hub_projects.py              -> uses current auth env default hub
+    #   python src\acc_hub_projects.py TST          -> TST hub
+    #   python src\acc_hub_projects.py AG           -> AG hub
+    #   python src\acc_hub_projects.py Swissgrid_AG -> explicit hub key
 
+    print(f"\nEnvironment: {auth.ACC_ENV} (hub: {hub_key})")
     print("\nFetching Hubs...")
     hubs = get_hubs()
 
