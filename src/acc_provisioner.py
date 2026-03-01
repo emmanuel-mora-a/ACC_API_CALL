@@ -6,10 +6,12 @@ Reads a CSV of users and provisions them to ACC projects:
     only if any field differs. CSV = desired final state for roles.
 
 Usage:
-    python acc_provisioner.py <csv_file> [target] [--dry-run]
+    python acc_provisioner.py <csv_file> [target] [--dry-run] [--add-only]
 
     --dry-run : Run the full pipeline (CSV parse, project/role lookup,
                 comparison) but skip actual import/update API calls.
+    --add-only: Never update existing users. If email already exists
+                in the target project, skip that row.
 """
 
 import argparse
@@ -452,7 +454,7 @@ def print_summary(added, updated, skipped, failed):
     for r in updated:
         print(f"    ~ {r['email']} -> {r['project_name']} ({r['reason']})")
 
-    print(f"\n  Skipped (no changes): {len(skipped)}")
+    print(f"\n  Skipped: {len(skipped)}")
     for r in skipped:
         print(f"    - {r['email']} -> {r['project_name']}")
 
@@ -470,6 +472,11 @@ def main():
     #action="store_true" -- if the user includes --dry-run, set it to True. If they don't, it defaults to False
     #python acc_provisioner.py data.csv --dry-run    # dry_run = True  → only simulates, no API calls
     parser.add_argument("--dry-run", action="store_true",help="Validate everything but skip the actual user import API call",) 
+    parser.add_argument(
+        "--add-only",
+        action="store_true",
+        help="Only add missing users. If user email already exists in project, skip (no update).",
+    )
     args, extras = parser.parse_known_args()
     if extras:
         if args.target is None and len(extras) == 1:
@@ -489,6 +496,7 @@ def main():
     csv_path = args.csv_file
     target = (args.target or "").strip()
     dry_run = args.dry_run
+    add_only = args.add_only
 
     if not target:
         env = auth.ACC_ENV
@@ -509,6 +517,8 @@ def main():
 
     if dry_run:
         print("  *** DRY-RUN MODE — no users will actually be imported ***")
+    if add_only:
+        print("  *** ADD-ONLY MODE — existing users are always skipped (by email) ***")
 
     hub_id = os.getenv(hub_key, "")
     if not hub_id:
@@ -613,6 +623,12 @@ def main():
 
         # 4. Check if user already exists in the project
         if email in acc_user_map:
+            if add_only:
+                reason = "already exists in project (add-only mode)"
+                print(f"  {label} ... SKIPPED ({reason})")
+                skipped.append({"email": email, "project_name": project_name, "reason": reason})
+                continue
+
             existing_user = acc_user_map[email]
             changes, reasons = _detect_changes(
                 existing_user, role_ids, company_id, row["access_level"]
