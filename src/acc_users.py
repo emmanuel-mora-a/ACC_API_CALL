@@ -18,6 +18,7 @@ from acc_hub_projects import get_hubs, get_projects
 
 # Max retries for 429 rate-limited requests
 MAX_RETRIES = 5
+MAX_PROJECT_RETRIES = 2
 
 # Request timeout: (connect_timeout, read_timeout) in seconds
 REQUEST_TIMEOUT = (5, 30)
@@ -30,64 +31,115 @@ def _strip_project_id(project_id):
     return project_id
 
 
+def _retry_wait_seconds(response, attempt):
+    """Compute wait time for retries using Retry-After or exponential backoff."""
+    retry_after = response.headers.get("Retry-After", "").strip() if response is not None else ""
+    if retry_after.isdigit():
+        return int(retry_after)
+    return min(2 ** attempt, 30)
+
+
 def get_project_users(project_id):
     """
     Fetch all users for a given project using the ACC Admin API.
     Handles pagination, rate limiting (with max retries), and network errors.
-    Returns a list of user dicts.
+    Never returns partial data: either complete results or an error.
+    Returns tuple: (users, error_message, expected_total).
     """
     clean_id = _strip_project_id(project_id)
     url = f"{BASE_URL}/construction/admin/v1/projects/{clean_id}/users"
 
-    all_users = []
-    offset = 0
-    limit = 100
-    retries = 0
+    for project_attempt in range(1, MAX_PROJECT_RETRIES + 2):
+        all_users = []
+        offset = 0
+        limit = 100
+        expected_total = None
 
-    while True:
-        params = {"offset": offset, "limit": limit}
+        while True:
+            params = {"offset": offset, "limit": limit}
+            page_success = False
 
-        try:
-            response = requests.get(
-                url, headers=get_auth_headers(), params=params, timeout=REQUEST_TIMEOUT
+            for attempt in range(0, MAX_RETRIES + 1):
+                try:
+                    response = requests.get(
+                        url, headers=get_auth_headers(), params=params, timeout=REQUEST_TIMEOUT
+                    )
+                except requests.RequestException as e:
+                    if attempt < MAX_RETRIES:
+                        wait = min(2 ** attempt, 30)
+                        print(
+                            f"    Request failed at offset {offset} "
+                            f"(attempt {attempt + 1}/{MAX_RETRIES + 1}): {e}. Waiting {wait}s..."
+                        )
+                        time.sleep(wait)
+                        continue
+                    break
+
+                if response.status_code == 429:
+                    if attempt < MAX_RETRIES:
+                        wait = _retry_wait_seconds(response, attempt)
+                        print(
+                            f"    Rate limited at offset {offset} "
+                            f"(attempt {attempt + 1}/{MAX_RETRIES + 1}). Waiting {wait}s..."
+                        )
+                        time.sleep(wait)
+                        continue
+                    break
+
+                if response.status_code in {500, 502, 503, 504}:
+                    if attempt < MAX_RETRIES:
+                        wait = _retry_wait_seconds(response, attempt)
+                        print(
+                            f"    Server error {response.status_code} at offset {offset} "
+                            f"(attempt {attempt + 1}/{MAX_RETRIES + 1}). Waiting {wait}s..."
+                        )
+                        time.sleep(wait)
+                        continue
+                    break
+
+                if response.status_code != 200:
+                    return [], f"HTTP {response.status_code} at offset {offset}: {response.text[:200]}", expected_total
+
+                data = response.json()
+                users = data if isinstance(data, list) else data.get("results", [])
+                all_users.extend(users)
+
+                if isinstance(data, dict):
+                    pagination = data.get("pagination", {})
+                    expected_total = pagination.get("totalResults", expected_total)
+                    next_offset = pagination.get("offset", offset) + pagination.get("limit", limit)
+                    if next_offset >= (expected_total or 0):
+                        page_success = True
+                        break
+                    offset = next_offset
+                else:
+                    expected_total = len(all_users)
+                    page_success = True
+                    break
+
+                page_success = True
+                break
+
+            if not page_success:
+                break
+
+            if expected_total is not None and len(all_users) >= expected_total:
+                break
+
+        if expected_total is not None and len(all_users) == expected_total:
+            return all_users, "", expected_total
+
+        if project_attempt <= MAX_PROJECT_RETRIES:
+            print(
+                f"    Incomplete pagination ({len(all_users)}/{expected_total or 'unknown'}) "
+                f"on project-attempt {project_attempt}/{MAX_PROJECT_RETRIES + 1}. Retrying project..."
             )
-        except requests.RequestException as e:
-            print(f"    Request failed: {e}")
-            return all_users
-
-        if response.status_code == 429:
-            retries += 1
-            if retries > MAX_RETRIES:
-                print(f"    Max retries ({MAX_RETRIES}) exceeded on 429. Skipping.")
-                return all_users
-            retry_after = int(response.headers.get("Retry-After", 5))
-            print(f"    Rate limited (attempt {retries}/{MAX_RETRIES}). Waiting {retry_after}s...")
-            time.sleep(retry_after)
+            time.sleep(1)
             continue
 
-        # Reset retry counter on successful non-429 response
-        retries = 0
+        return [], f"incomplete pagination: fetched {len(all_users)} of {expected_total or 'unknown'}", expected_total
 
-        if response.status_code != 200:
-            print(f"    Error fetching users: {response.status_code} - {response.text[:200]}")
-            return all_users
-
-        data = response.json()
-        users = data if isinstance(data, list) else data.get("results", [])
-        all_users.extend(users)
-
-        # Check if there are more pages
-        if isinstance(data, dict):
-            pagination = data.get("pagination", {})
-            total = pagination.get("totalResults", 0)
-            if offset + limit >= total:
-                break
-        else:
-            break
-
-        offset += limit
-
-    return all_users
+    return [], "unknown pagination failure", None
 
 
 def _deduplicated(items):
@@ -175,7 +227,7 @@ def extract_user_row(user, project_name):
 
 
 def fetch_all_users_for_hub(hub_id, hubs, project_name_filter=None):
-    """Fetch users for every project in a hub (or one filtered project). Returns list of CSV rows."""
+    """Fetch users for every project in a hub (or one filtered project)."""
     # Find hub name
     hub_name = "unknown"
     for hub in hubs:
@@ -202,6 +254,7 @@ def fetch_all_users_for_hub(hub_id, hubs, project_name_filter=None):
         projects = filtered_projects
 
     all_rows = []
+    failed_projects = []
     total_projects = len(projects)
 
     print(f"\nFetching users for {total_projects} projects...\n")
@@ -211,7 +264,20 @@ def fetch_all_users_for_hub(hub_id, hubs, project_name_filter=None):
         project_name = project.get("attributes", {}).get("name", "N/A")
         print(f"  [{i}/{total_projects}] {project_name}...", end=" ")
 
-        users = get_project_users(project_id)
+        users, error_message, expected_total = get_project_users(project_id)
+        if error_message:
+            expected_label = expected_total if expected_total is not None else "unknown"
+            print(f"FAILED ({error_message}; expected_total={expected_label})")
+            failed_projects.append(
+                {
+                    "project_name": project_name,
+                    "project_id": project_id,
+                    "reason": error_message,
+                    "expected_total": expected_total if expected_total is not None else "",
+                }
+            )
+            continue
+
         print(f"{len(users)} users")
 
         for user in users:
@@ -222,7 +288,7 @@ def fetch_all_users_for_hub(hub_id, hubs, project_name_filter=None):
         if i < total_projects:
             time.sleep(0.3)
 
-    return all_rows, hub_name
+    return all_rows, hub_name, failed_projects
 
 
 def export_users_to_csv(rows, hub_name="unknown"):
@@ -259,6 +325,38 @@ def export_users_to_csv(rows, hub_name="unknown"):
     print(f"\n  CSV exported: {full_path}")
     print(f"  Total rows:   {len(rows)}")
 
+    return filename
+
+
+def export_failed_projects_report(failed_projects, hub_name="unknown"):
+    """Export failed project fetches to a CSV report under _Reports."""
+    if not failed_projects:
+        return None
+
+    _project_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    output_dir = os.path.join(_project_root, "_Reports")
+    os.makedirs(output_dir, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_hub_name = hub_name.replace(" ", "_").replace("/", "-")
+    filename = os.path.join(output_dir, f"users_failed_projects_{safe_hub_name}_{timestamp}.csv")
+
+    with open(filename, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["project_name", "project_id", "reason", "expected_total"])
+        for project in failed_projects:
+            writer.writerow(
+                [
+                    project.get("project_name", ""),
+                    project.get("project_id", ""),
+                    project.get("reason", ""),
+                    project.get("expected_total", ""),
+                ]
+            )
+
+    full_path = os.path.abspath(filename)
+    print(f"\n  Failed-project report: {full_path}")
+    print(f"  Failed projects:       {len(failed_projects)}")
     return filename
 
 
@@ -328,7 +426,9 @@ if __name__ == "__main__":
     hubs = get_hubs()
 
     if hubs:
-        rows, hub_name = fetch_all_users_for_hub(hub_id, hubs, project_name_filter=args.project_name)
+        rows, hub_name, failed_projects = fetch_all_users_for_hub(
+            hub_id, hubs, project_name_filter=args.project_name
+        )
 
         if rows:
             if args.dry_run:
@@ -338,3 +438,6 @@ if __name__ == "__main__":
                 export_users_to_csv(rows, hub_name)
         else:
             print("\nNo users found across any projects.")
+
+        if failed_projects:
+            export_failed_projects_report(failed_projects, hub_name)
