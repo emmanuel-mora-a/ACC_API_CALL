@@ -34,6 +34,7 @@ ROLE_JSON_PATH_AG = os.path.join(_PROJECT_ROOT, "ACC_roles", "role_id_acc_AG.jso
 
 REQUEST_TIMEOUT = (5, 30)
 MAX_RETRIES = 5
+IMPORT_BATCH_SIZE = 50
 
 # ---------------------------------------------------------------------------
 # Access-level configurations
@@ -102,7 +103,7 @@ def _api_get(url, params=None):
 
 
 def _api_post(url, json_body, extra_headers=None):
-    """POST with timeout, retry on 429."""
+    """POST with timeout, retry on 429, 5xx, and transient request errors."""
     for attempt in range(MAX_RETRIES + 1):
         try:
             headers = get_auth_headers()
@@ -110,14 +111,26 @@ def _api_post(url, json_body, extra_headers=None):
                 headers.update(extra_headers)
             resp = requests.post(url, headers=headers, json=json_body, timeout=REQUEST_TIMEOUT)
         except requests.RequestException as e:
+            if attempt < MAX_RETRIES:
+                wait = min(2 ** attempt, 30)
+                time.sleep(wait)
+                continue
             return None, str(e)
 
         if resp.status_code == 429:
-            wait = int(resp.headers.get("Retry-After", 5))
+            retry_after = resp.headers.get("Retry-After", "").strip()
+            wait = int(retry_after) if retry_after.isdigit() else min(2 ** attempt, 30)
             if attempt < MAX_RETRIES:
                 time.sleep(wait)
                 continue
             return None, "rate limited after max retries"
+
+        if resp.status_code in {500, 502, 503, 504}:
+            if attempt < MAX_RETRIES:
+                wait = min(2 ** attempt, 30)
+                time.sleep(wait)
+                continue
+            return None, f"server error after max retries (HTTP {resp.status_code})"
 
         return resp, None
 
@@ -254,6 +267,8 @@ def fetch_project_users(project_id):
             if email:
                 acc_user_map[email] = {
                     "id": u.get("id", ""),
+                    "firstName": (u.get("firstName") or u.get("first_name") or "").strip(),
+                    "lastName": (u.get("lastName") or u.get("last_name") or "").strip(),
                     "roleIds": u.get("roleIds", []),
                     "companyId": u.get("companyId", ""),
                     "products": u.get("products", []),
@@ -306,7 +321,14 @@ def _api_patch(url, json_body, extra_headers=None):
 # desired_role_ids -> CSV roles → resolved to IDs via JSON
 # desired_company_id -> CSV company → resolved to ID via ACC companies
 # desired_access_level -> CSV raw string ("Member" or "Administrator")
-def _detect_changes(existing_user, desired_role_ids, desired_company_id, desired_access_level):
+def _detect_changes(
+    existing_user,
+    desired_first_name,
+    desired_last_name,
+    desired_role_ids,
+    desired_company_id,
+    desired_access_level,
+):
     """Compare existing ACC user with CSV desired state.
     Returns (changes_dict, reasons_list).
     changes_dict contains only the fields that need to be PATCHed.
@@ -314,6 +336,19 @@ def _detect_changes(existing_user, desired_role_ids, desired_company_id, desired
     """
     changes = {}
     reasons = []
+
+    # Name: compare first/last name if CSV provides values.
+    desired_first = (desired_first_name or "").strip()
+    desired_last = (desired_last_name or "").strip()
+    existing_first = (existing_user.get("firstName") or "").strip()
+    existing_last = (existing_user.get("lastName") or "").strip()
+
+    if desired_first and desired_first != existing_first:
+        changes["firstName"] = desired_first
+        reasons.append("first_name changed")
+    if desired_last and desired_last != existing_last:
+        changes["lastName"] = desired_last
+        reasons.append("last_name changed")
 
     # Roles: only compare if CSV specifies roles (non-empty)
     if desired_role_ids:
@@ -410,6 +445,69 @@ def import_user_to_project(project_id, email, role_ids, access_level, company_id
             return False, reason
 
     return True, ""
+
+
+def _build_import_user_payload(email, role_ids, access_level, company_id=None):
+    """Build one users:import payload item."""
+    is_admin = _is_admin(access_level)
+    user_payload = {
+        "email": email.strip().lower(),
+        "products": list(ADMIN_PRODUCTS if is_admin else MEMBER_PRODUCTS),
+    }
+    if role_ids:
+        user_payload["roleIds"] = role_ids
+    if company_id:
+        user_payload["companyId"] = company_id
+    return user_payload
+
+
+def import_users_batch_to_project(project_id, user_payloads):
+    """Import a batch of users into one project.
+    Returns (successful_emails_set, failure_reason_by_email_dict, batch_error_message).
+    """
+    clean_id = _strip_id(project_id)
+    url = f"{BASE_URL}/construction/admin/v1/projects/{clean_id}/users:import"
+
+    body = {"users": user_payloads}
+    extra = {"x-user-id": auth.USER_ID} if auth.USER_ID else None
+    resp, err = _api_post(url, body, extra_headers=extra)
+    if err:
+        return set(), {}, err
+
+    if resp.status_code not in (200, 201, 202):
+        return set(), {}, f"HTTP {resp.status_code}: {resp.text[:300]}"
+
+    try:
+        result = resp.json()
+    except ValueError:
+        result = {}
+
+    requested_emails = {u.get("email", "").strip().lower() for u in user_payloads if u.get("email")}
+    failure_map = {}
+    success_set = set()
+
+    if isinstance(result, dict):
+        for f in result.get("failure", []):
+            email = str(f.get("email", "")).strip().lower()
+            reason = "unknown error"
+            errors = f.get("errors", [])
+            if errors and isinstance(errors, list):
+                first_err = errors[0] if isinstance(errors[0], dict) else {}
+                reason = first_err.get("title") or first_err.get("detail") or reason
+            if email:
+                failure_map[email] = reason
+
+        for s in result.get("success", []):
+            if isinstance(s, dict):
+                email = str(s.get("email", "")).strip().lower()
+                if email:
+                    success_set.add(email)
+
+    # If API doesn't explicitly return success list, infer success from requested - failures.
+    if not success_set:
+        success_set = requested_emails.difference(set(failure_map.keys()))
+
+    return success_set, failure_map, ""
 
 
 # ---------------------------------------------------------------------------
@@ -572,6 +670,8 @@ def main():
     failed = []
     seen = set()
 
+    pending_adds_by_project = {}  # project_id -> list of pending add dicts
+
     total = len(rows)
     print(f"\nProcessing {total} rows...\n")
 
@@ -631,7 +731,12 @@ def main():
 
             existing_user = acc_user_map[email]
             changes, reasons = _detect_changes(
-                existing_user, role_ids, company_id, row["access_level"]
+                existing_user,
+                row["first_name"],
+                row["last_name"],
+                role_ids,
+                company_id,
+                row["access_level"],
             )
 
             if not changes:
@@ -665,19 +770,67 @@ def main():
             print(f"  {label} ... WOULD ADD (level={level}, roles={role_names}, company={company_id or 'N/A'})")
             added.append({"email": email, "project_name": project_name, "roles": role_names, "level": level})
         else:
-            success, err_msg = import_user_to_project(
-                project_id, email, role_ids, row["access_level"], company_id
+            user_payload = _build_import_user_payload(email, role_ids, row["access_level"], company_id)
+            pending_adds_by_project.setdefault(project_id, []).append(
+                {
+                    "email": email,
+                    "project_name": project_name,
+                    "roles": role_names,
+                    "level": level,
+                    "payload": user_payload,
+                }
             )
+            print(f"  {label} ... QUEUED FOR ADD (batch)")
 
-            if success:
-                print(f"  {label} ... ADDED")
-                added.append({"email": email, "project_name": project_name, "roles": role_names, "level": level})
-                acc_user_map[email] = {}
-            else:
-                print(f"  {label} ... FAILED ({err_msg})")
-                failed.append({"email": email, "project_name": project_name, "reason": err_msg})
+    # --- Execute queued add imports in batches (real run only) ---
+    if not dry_run and pending_adds_by_project:
+        print(f"\nImporting queued users in batches of {IMPORT_BATCH_SIZE}...")
+        for project_id, pending_entries in pending_adds_by_project.items():
+            project_total = len(pending_entries)
+            for start in range(0, project_total, IMPORT_BATCH_SIZE):
+                batch_entries = pending_entries[start:start + IMPORT_BATCH_SIZE]
+                batch_payloads = [e["payload"] for e in batch_entries]
+                success_set, failure_map, batch_err = import_users_batch_to_project(project_id, batch_payloads)
 
-            time.sleep(0.3)
+                if batch_err:
+                    for e in batch_entries:
+                        failed.append(
+                            {
+                                "email": e["email"],
+                                "project_name": e["project_name"],
+                                "reason": batch_err,
+                            }
+                        )
+                    continue
+
+                for e in batch_entries:
+                    email = e["email"]
+                    if email in failure_map:
+                        failed.append(
+                            {
+                                "email": email,
+                                "project_name": e["project_name"],
+                                "reason": failure_map[email],
+                            }
+                        )
+                    elif email in success_set:
+                        added.append(
+                            {
+                                "email": email,
+                                "project_name": e["project_name"],
+                                "roles": e["roles"],
+                                "level": e["level"],
+                            }
+                        )
+                        acc_member_cache.get(project_id, {})[email] = {}
+                    else:
+                        failed.append(
+                            {
+                                "email": email,
+                                "project_name": e["project_name"],
+                                "reason": "batch result missing status for user",
+                            }
+                        )
 
     # --- Summary ---
     print_summary(added, updated, skipped, failed)
