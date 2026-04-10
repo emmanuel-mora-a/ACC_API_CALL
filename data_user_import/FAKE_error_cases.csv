@@ -1,5 +1,0 @@
-first_name,last_name,email,project_name,roles,company,access_level
-Fake,User,fake.user@example.com,NonExistentProject,Engineer,Test Company,Project Member
-Bad,Email,,SAAA-ProvisionerAAA,Fachplaner,Test Company,Project Member
-No,Roles,no.roles@example.com,SAAA-ProvisionerAAA,,Test Company,Project Member
-Missing,Access,missing@example.com,SAAA-ProvisionerAAA,Fachplaner,Test Company,

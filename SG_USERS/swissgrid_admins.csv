@@ -1,0 +1,14 @@
+first_name,last_name,email,roles,company,access_level
+andre,herrera,andre.herrera@ebp.ch,swissgrid_intern,EBP AG,Administrator
+calvin,mpombo,calvin.mpombo@swissgrid.ch,swissgrid_intern,Swissgrid AG,Administrator
+emmanuel,mora,emmanuel.mora@swissgrid.ch,swissgrid_intern,Swissgrid AG,Administrator
+gianluca,genova,gianluca.genova@metaxd.ch,swissgrid_intern,Metaxd AG,Administrator
+lukas,kuenzel,lukas.kuenzel@dreso.com,swissgrid_intern,Dreso AG,Administrator
+martin,henz,martin.henz@infragon.ch,swissgrid_intern,Infragon AG,Administrator
+mate,petrich,mate.petrich@amstein-walthert.ch,swissgrid_intern,Amstein + Walthert AG,Administrator
+mohammadreza,nili,mohammadreza.nili@swissgrid.ch,swissgrid_intern,Swissgrid AG,Administrator
+patrick,pick,patrick.pick@pom.ch,swissgrid_intern,POM+Consulting AG,Administrator
+reza,nili,reza.nili@swissgrid.ch,swissgrid_intern,Swissgrid AG,Administrator
+tanja,wider,tanja.wider@cadmec.ch,swissgrid_intern,Cadmec AG,Administrator
+thierry-benoit,waelchli,thierry-benoit.waelchli@swissgrid.ch,swissgrid_intern,Swissgrid AG,Administrator
+Paul,Ignat,Paul.Ignat@swissgrid.ch,swissgrid_intern,Swissgrid AG,Administrator

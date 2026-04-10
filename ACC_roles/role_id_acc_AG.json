@@ -1,160 +1,172 @@
 {
-    "roles": [
-      {
-        "id": "0a42401b-2968-460a-8dc9-55b96cd7b3ee",
-        "name": "Lieferant_HV Kabel"
-      },
-      {
-        "id": "0c3f5ef7-653f-4abf-a279-2735411c2eef",
-        "name": "Fachplaner_Umwelt"
-      },
-      {
-        "id": "0e8b1ae5-c6f3-4b6c-ace7-9a2088cd8206",
-        "name": "Asset Portfolio Engineer"
-      },
-      {
-        "id": "1bf96ec7-8e81-4ec7-89d6-7163d6a8b0ff",
-        "name": "Local Site Manager"
-      },
-      {
-        "id": "237fdcf4-27ff-4d34-bbe3-180589546c1a",
-        "name": "Grid Data Management"
-      },
-      {
-        "id": "290bf318-ecc8-4e86-abe6-2643a0631daf",
-        "name": "Lieferant_Stahlstruktur"
-      },
-      {
-        "id": "2a589e80-9690-47e8-b99b-2c51636d80d6",
-        "name": "Fachplaner_Bestand"
-      },
-      {
-        "id": "2c32602a-05eb-491e-a95e-f63693f86338",
-        "name": "Lieferant_PSU"
-      },
-      {
-        "id": "2cc8999d-ec7e-4971-8140-59d8c5fd8655",
-        "name": "Fachplaner_Primaer"
-      },
-      {
-        "id": "323638c9-8c15-4f1a-aa46-6097cd4aeea7",
-        "name": "Legal Counsel"
-      },
-      {
-        "id": "366c6384-c6e8-4368-87a4-5f2f26f20828",
-        "name": "Fachplaner_Bau"
-      },
-      {
-        "id": "371f9942-32c8-4c5d-912c-097b922c4168",
-        "name": "Lieferant_Transformator"
-      },
-      {
-        "id": "37c07e96-75ca-4afd-aaf9-82b451cb11ff",
-        "name": "Gesamtprojektleiter"
-      },
-      {
-        "id": "39b0b401-3776-4c14-a005-d95f2fc19493",
-        "name": "Lieferant_Primärtechnik"
-      },
-      {
-        "id": "463edf62-ccad-4949-ae6d-e5f11236fd37",
-        "name": "Evaluationsteam_Unternehmer"
-      },
-      {
-        "id": "46db845f-acb7-4596-ba33-3251d486e078",
-        "name": "Fachplaner"
-      },
-      {
-        "id": "4de5f197-0e3c-4d4f-bc56-b5f093db1d88",
-        "name": "Grid Maintenance Manager"
-      },
-      {
-        "id": "5343f896-8c9f-4f22-aded-4d7ac0c10965",
-        "name": "TPL_GPE_Bau"
-      },
-      {
-        "id": "59685597-01e7-42a5-92e2-4bad708738b1",
-        "name": "TPL_GPE_Primaer"
-      },
-      {
-        "id": "5a7051ff-72db-46d6-8e86-4d77e23b30ca",
-        "name": "Lieferant_Diverses"
-      },
-      {
-        "id": "5aa96759-1b25-46df-9bfd-162c7e26cac1",
-        "name": "Communication Manager"
-      },
-      {
-        "id": "5edaa6a9-b0b4-4de0-b3a1-fcd1aaacb165",
-        "name": "Lieferant_Nebenanlagen"
-      },
-      {
-        "id": "612a68a4-f4de-4046-b040-6d56976c50c8",
-        "name": "Lieferant_Bau"
-      },
-      {
-        "id": "649d3420-a007-48c2-976c-f4f6d9004b15",
-        "name": "Lieferant_Sekundärtechnik"
-      },
-      {
-        "id": "65d463eb-fe4d-42fa-afe4-77794ad97ce9",
-        "name": "TPL_GPE_Umwelt"
-      },
-      {
-        "id": "7da8c2a8-9d5c-4c49-b2ea-34b2dfb351d1",
-        "name": "Lieferant_Gebäudetechnik"
-      },
-      {
-        "id": "8efea252-b101-4170-9bca-bb99d76cb7a2",
-        "name": "HSE Manager"
-      },
-      {
-        "id": "9abb9ae0-a4c4-414a-8dd5-cc43e65be6aa",
-        "name": "GPE_BIM"
-      },
-      {
-        "id": "9b83776c-1eb5-4699-80d0-ed5f07da0a51",
-        "name": "Procurement Manager"
-      },
-      {
-        "id": "a918acfd-b523-499d-8d4e-cd7dc225ca94",
-        "name": "Operational Planning"
-      },
-      {
-        "id": "abc8be04-6b27-43ce-94c9-8aeacdbd3290",
-        "name": "TPL_GPE_Leitungen"
-      },
-      {
-        "id": "bd40c4f6-04a8-433f-9f2b-ef3119b1c74a",
-        "name": "Fachplaner_Projektleiter"
-      },
-      {
-        "id": "c360704f-edab-4332-abd1-03582b45e489",
-        "name": "Fachplaner_Leitungen"
-      },
-      {
-        "id": "c5ba0ddf-5a31-4481-bcff-2ca236df17ed",
-        "name": "Fachplaner_Vermesser"
-      },
-      {
-        "id": "d09d8783-7dc4-46b1-8abb-9f70de5deeee",
-        "name": "Swissgrid_intern"
-      },
-      {
-        "id": "d35c5002-8884-45e9-8c56-1de83e55842e",
-        "name": "Fachplaner_Sekundaer"
-      },
-      {
-        "id": "df2dc609-e93e-4c79-a08f-5de36271ef36",
-        "name": "Evaluationsteam_Fachplaner"
-      },
-      {
-        "id": "f9d537f7-cbab-46fd-8b30-2da01a785101",
-        "name": "Lieferant_Leitungsbau"
-      },
-      {
-        "id": "fe84bf87-b3cf-45fa-8e50-66bfeb1fc5d5",
-        "name": "TPL_GPE_Sekundaer"
-      }
-    ]
-  }
+  "roles": [
+    {
+      "id": "0a42401b-2968-460a-8dc9-55b96cd7b3ee",
+      "name": "Lieferant_HV Kabel"
+    },
+    {
+      "id": "0c3f5ef7-653f-4abf-a279-2735411c2eef",
+      "name": "Fachplaner_Umwelt"
+    },
+    {
+      "id": "0e8b1ae5-c6f3-4b6c-ace7-9a2088cd8206",
+      "name": "Asset Portfolio Engineer"
+    },
+    {
+      "id": "1bf96ec7-8e81-4ec7-89d6-7163d6a8b0ff",
+      "name": "Local Site Manager"
+    },
+    {
+      "id": "237fdcf4-27ff-4d34-bbe3-180589546c1a",
+      "name": "Grid Data Management"
+    },
+    {
+      "id": "290bf318-ecc8-4e86-abe6-2643a0631daf",
+      "name": "Lieferant_Stahlstruktur"
+    },
+    {
+      "id": "2a589e80-9690-47e8-b99b-2c51636d80d6",
+      "name": "Fachplaner_Bestand"
+    },
+    {
+      "id": "2c32602a-05eb-491e-a95e-f63693f86338",
+      "name": "Lieferant_PSU"
+    },
+    {
+      "id": "2c9f01a1-f286-4b64-94b9-4590ac856d6d",
+      "name": "SG_Projekt_mitarbeiter"
+    },
+    {
+      "id": "2cc8999d-ec7e-4971-8140-59d8c5fd8655",
+      "name": "Fachplaner_Primaer"
+    },
+    {
+      "id": "323638c9-8c15-4f1a-aa46-6097cd4aeea7",
+      "name": "Legal Counsel"
+    },
+    {
+      "id": "366c6384-c6e8-4368-87a4-5f2f26f20828",
+      "name": "Fachplaner_Bau"
+    },
+    {
+      "id": "371f9942-32c8-4c5d-912c-097b922c4168",
+      "name": "Lieferant_Transformator"
+    },
+    {
+      "id": "37c07e96-75ca-4afd-aaf9-82b451cb11ff",
+      "name": "Gesamtprojektleiter"
+    },
+    {
+      "id": "39b0b401-3776-4c14-a005-d95f2fc19493",
+      "name": "Lieferant_Primärtechnik"
+    },
+    {
+      "id": "463edf62-ccad-4949-ae6d-e5f11236fd37",
+      "name": "Evaluationsteam_Unternehmer"
+    },
+    {
+      "id": "46db845f-acb7-4596-ba33-3251d486e078",
+      "name": "Fachplaner"
+    },
+    {
+      "id": "4895920a-e2c4-4dc7-b8a1-691f4786ae34",
+      "name": "Administrator"
+    },
+    {
+      "id": "4de5f197-0e3c-4d4f-bc56-b5f093db1d88",
+      "name": "Grid Maintenance Manager"
+    },
+    {
+      "id": "5343f896-8c9f-4f22-aded-4d7ac0c10965",
+      "name": "TPL_GPE_Bau"
+    },
+    {
+      "id": "59685597-01e7-42a5-92e2-4bad708738b1",
+      "name": "TPL_GPE_Primaer"
+    },
+    {
+      "id": "5a7051ff-72db-46d6-8e86-4d77e23b30ca",
+      "name": "Lieferant_Diverses"
+    },
+    {
+      "id": "5aa96759-1b25-46df-9bfd-162c7e26cac1",
+      "name": "Communication Manager"
+    },
+    {
+      "id": "5edaa6a9-b0b4-4de0-b3a1-fcd1aaacb165",
+      "name": "Lieferant_Nebenanlagen"
+    },
+    {
+      "id": "612a68a4-f4de-4046-b040-6d56976c50c8",
+      "name": "Lieferant_Bau"
+    },
+    {
+      "id": "649d3420-a007-48c2-976c-f4f6d9004b15",
+      "name": "Lieferant_Sekundärtechnik"
+    },
+    {
+      "id": "65d463eb-fe4d-42fa-afe4-77794ad97ce9",
+      "name": "TPL_GPE_Umwelt"
+    },
+    {
+      "id": "7da8c2a8-9d5c-4c49-b2ea-34b2dfb351d1",
+      "name": "Lieferant_Gebäudetechnik"
+    },
+    {
+      "id": "8efea252-b101-4170-9bca-bb99d76cb7a2",
+      "name": "HSE Manager"
+    },
+    {
+      "id": "9abb9ae0-a4c4-414a-8dd5-cc43e65be6aa",
+      "name": "GPE_BIM"
+    },
+    {
+      "id": "9b83776c-1eb5-4699-80d0-ed5f07da0a51",
+      "name": "Procurement Manager"
+    },
+    {
+      "id": "a918acfd-b523-499d-8d4e-cd7dc225ca94",
+      "name": "Operational Planning"
+    },
+    {
+      "id": "abc8be04-6b27-43ce-94c9-8aeacdbd3290",
+      "name": "TPL_GPE_Leitungen"
+    },
+    {
+      "id": "b8577034-f7b1-4aa3-b2c1-a94fe925d100",
+      "name": "Lieferant"
+    },
+    {
+      "id": "bd40c4f6-04a8-433f-9f2b-ef3119b1c74a",
+      "name": "Fachplaner_Projektleiter"
+    },
+    {
+      "id": "c360704f-edab-4332-abd1-03582b45e489",
+      "name": "Fachplaner_Leitungen"
+    },
+    {
+      "id": "c5ba0ddf-5a31-4481-bcff-2ca236df17ed",
+      "name": "Fachplaner_Vermesser"
+    },
+    {
+      "id": "d09d8783-7dc4-46b1-8abb-9f70de5deeee",
+      "name": "Swissgrid_intern"
+    },
+    {
+      "id": "d35c5002-8884-45e9-8c56-1de83e55842e",
+      "name": "Fachplaner_Sekundaer"
+    },
+    {
+      "id": "df2dc609-e93e-4c79-a08f-5de36271ef36",
+      "name": "Evaluationsteam_Fachplaner"
+    },
+    {
+      "id": "f9d537f7-cbab-46fd-8b30-2da01a785101",
+      "name": "Lieferant_Leitungsbau"
+    },
+    {
+      "id": "fe84bf87-b3cf-45fa-8e50-66bfeb1fc5d5",
+      "name": "TPL_GPE_Sekundaer"
+    }
+  ]
+}

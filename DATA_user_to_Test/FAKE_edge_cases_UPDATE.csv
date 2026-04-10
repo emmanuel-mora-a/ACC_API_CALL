@@ -1,0 +1,5 @@
+first_name,last_name,email,project_name,roles,company,access_level
+Emmanuel,Mora,  Emmanuel.Mora@Swissgrid.CH  ,  SAAA-ProvisionerAAA  ,Swissgrid_intern,Swissgrid_2 TST,Administrator
+Emmanuel,Mora,emmanuel.mora@swissgrid.ch,SAAA-ProvisionerAAA,Lieferant_Bau,Swissgrid_2 TST,Administrator
+Multi,Role,multi.role@example.com,SAAA-ProvisionerAAA,Lieferant_Bau;Lieferant_Diverses;FakeRole,Swissgrid_2 TST,Administrator
+N/A,Roles,na.roles@example.com,SAAA-ProvisionerAAA,Fachplaner,Swissgrid_2 TST,Administrator
